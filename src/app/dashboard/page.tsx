@@ -13,12 +13,20 @@ import {
   fetchPriceData,
   generateMockData,
 } from "@/lib/prices";
-import type { PricePoint, TabId } from "@/lib/types";
+import {
+  DEFAULT_BUY_ZONE_OPTIONS,
+  type BuyZoneOptions,
+  type PricePoint,
+  type TabId,
+} from "@/lib/types";
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<TabId>("unlock");
   const [priceData, setPriceData] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [thresholds, setThresholds] = useState<BuyZoneOptions>(
+    DEFAULT_BUY_ZONE_OPTIONS,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +52,7 @@ export default function DashboardPage() {
 
   return (
     <main
-      className="mx-auto min-h-dvh max-w-3xl px-4 py-5 sm:px-5"
+      className="mx-auto min-h-dvh w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8"
       style={{ color: C.text, fontFamily: C.font }}
     >
       <DashboardHeader currentPrice={currentPrice} priceChange={priceChange} />
@@ -59,7 +67,12 @@ export default function DashboardPage() {
         />
       )}
       {activeTab === "cycles" && (
-        <CyclesTab priceData={priceData} loading={loading} />
+        <CyclesTab
+          priceData={priceData}
+          loading={loading}
+          thresholds={thresholds}
+          onThresholdsChange={setThresholds}
+        />
       )}
       {activeTab === "levels" && (
         <LevelsTab
@@ -68,7 +81,9 @@ export default function DashboardPage() {
           currentPrice={currentPrice}
         />
       )}
-      {activeTab === "backtest" && <BacktestTab priceData={priceData} />}
+      {activeTab === "backtest" && (
+        <BacktestTab priceData={priceData} thresholds={thresholds} />
+      )}
 
       <p
         className="mt-5 text-center text-[9px]"

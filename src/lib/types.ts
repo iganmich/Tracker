@@ -80,6 +80,20 @@ export interface CycleProjectionResult {
   holdDays?: number;
 }
 
+export interface BuyZoneOptions {
+  pumpMin: number;
+  dropMin: number;
+  dropMax: number;
+  recoveryMin: number;
+}
+
+export const DEFAULT_BUY_ZONE_OPTIONS: BuyZoneOptions = {
+  pumpMin: 0.1,
+  dropMin: 0.1,
+  dropMax: 0.7,
+  recoveryMin: 0.08,
+};
+
 export type TabId = "unlock" | "cycles" | "levels" | "backtest";
 
 export interface TabDef {

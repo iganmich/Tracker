@@ -15,24 +15,39 @@ import { AIBox } from "@/components/AIBox";
 import { ChartFrame } from "@/components/ChartFrame";
 import { ChartTooltip } from "@/components/ChartTooltip";
 import { StatCard } from "@/components/StatCard";
+import { ThresholdControls } from "@/components/ThresholdControls";
 import { C } from "@/lib/constants";
 import { callClaude } from "@/lib/claude";
 import {
   detectBuyZones,
   projectFutureCycles,
 } from "@/lib/analytics";
-import type { EnrichedPricePoint, PricePoint } from "@/lib/types";
+import type {
+  BuyZoneOptions,
+  EnrichedPricePoint,
+  PricePoint,
+} from "@/lib/types";
 
 interface CyclesTabProps {
   priceData: PricePoint[];
   loading: boolean;
+  thresholds: BuyZoneOptions;
+  onThresholdsChange: (next: BuyZoneOptions) => void;
 }
 
-export function CyclesTab({ priceData, loading }: CyclesTabProps) {
+export function CyclesTab({
+  priceData,
+  loading,
+  thresholds,
+  onThresholdsChange,
+}: CyclesTabProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const buyZones = useMemo(() => detectBuyZones(priceData), [priceData]);
+  const buyZones = useMemo(
+    () => detectBuyZones(priceData, thresholds),
+    [priceData, thresholds],
+  );
 
   const enriched: EnrichedPricePoint[] = useMemo(
     () =>
@@ -117,6 +132,12 @@ export function CyclesTab({ priceData, loading }: CyclesTabProps) {
 
   return (
     <div id="panel-cycles" role="tabpanel" aria-labelledby="tab-cycles">
+      <ThresholdControls
+        value={thresholds}
+        onChange={onThresholdsChange}
+        zoneCount={buyZones.length}
+      />
+
       <div className="mb-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         <StatCard
           label="Buy Zones Found"

@@ -1,10 +1,12 @@
 import type {
   BuyZone,
+  BuyZoneOptions,
   CycleProjection,
   CycleProjectionResult,
   PricePoint,
   SRResult,
 } from "./types";
+import { DEFAULT_BUY_ZONE_OPTIONS } from "./types";
 import { C } from "./constants";
 
 export function calcSR(data: PricePoint[]): SRResult {
@@ -40,8 +42,12 @@ export function calcSR(data: PricePoint[]): SRResult {
   };
 }
 
-export function detectBuyZones(data: PricePoint[]): BuyZone[] {
+export function detectBuyZones(
+  data: PricePoint[],
+  options: BuyZoneOptions = DEFAULT_BUY_ZONE_OPTIONS,
+): BuyZone[] {
   if (data.length < 14) return [];
+  const { pumpMin, dropMin, dropMax, recoveryMin } = options;
   const zones: BuyZone[] = [];
 
   for (let i = 8; i < data.length - 5; i++) {
@@ -61,14 +67,14 @@ export function detectBuyZones(data: PricePoint[]): BuyZone[] {
     if (!beforePeak.length) continue;
     const baseBeforePeak = Math.min(...beforePeak);
     const pumpMagnitude = (prevHigh - baseBeforePeak) / baseBeforePeak;
-    if (pumpMagnitude < 0.1) continue;
+    if (pumpMagnitude < pumpMin) continue;
 
     const localWindow = data.slice(i - 2, i + 3).map((d) => d.price);
     const localMin = Math.min(...localWindow);
     if (data[i].price > localMin * 1.005) continue;
 
     const drop = (prevHigh - data[i].price) / prevHigh;
-    if (drop < 0.1 || drop > 0.7) continue;
+    if (drop < dropMin || drop > dropMax) continue;
 
     const afterDip = data
       .slice(i + 1, Math.min(data.length, i + 11))
@@ -76,7 +82,7 @@ export function detectBuyZones(data: PricePoint[]): BuyZone[] {
     if (!afterDip.length) continue;
     const peakAfterDip = Math.max(...afterDip);
     const recoveryPct = (peakAfterDip - data[i].price) / data[i].price;
-    if (recoveryPct < 0.08) continue;
+    if (recoveryPct < recoveryMin) continue;
 
     const sellTarget = data[i].price * (1 + recoveryPct * 0.75);
     let sellIdx = i + 1;
