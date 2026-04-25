@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { TabBar } from "@/components/TabBar";
 import { BacktestTab } from "@/components/tabs/BacktestTab";
@@ -13,6 +13,7 @@ import {
   fetchPriceData,
   generateMockData,
 } from "@/lib/prices";
+import { usePersistentState } from "@/lib/storage";
 import {
   DEFAULT_BUY_ZONE_OPTIONS,
   type BuyZoneOptions,
@@ -20,12 +21,34 @@ import {
   type TabId,
 } from "@/lib/types";
 
+const TAB_IDS: readonly TabId[] = ["unlock", "cycles", "levels", "backtest"];
+
+const isTabId = (v: unknown): v is TabId =>
+  typeof v === "string" && (TAB_IDS as readonly string[]).includes(v);
+
+const isThresholds = (v: unknown): v is BuyZoneOptions =>
+  typeof v === "object" &&
+  v !== null &&
+  ["pumpMin", "dropMin", "dropMax", "recoveryMin"].every(
+    (k) => typeof (v as Record<string, unknown>)[k] === "number",
+  );
+
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("unlock");
+  const [activeTab, setActiveTab] = usePersistentState<TabId>(
+    "mon.activeTab",
+    "unlock",
+    isTabId,
+  );
   const [priceData, setPriceData] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [thresholds, setThresholds] = useState<BuyZoneOptions>(
+  const [thresholds, setThresholdsRaw] = usePersistentState<BuyZoneOptions>(
+    "mon.thresholds",
     DEFAULT_BUY_ZONE_OPTIONS,
+    isThresholds,
+  );
+  const setThresholds = useCallback(
+    (next: BuyZoneOptions) => setThresholdsRaw(next),
+    [setThresholdsRaw],
   );
 
   useEffect(() => {
