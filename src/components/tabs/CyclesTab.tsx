@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { AIBox } from "@/components/AIBox";
+import { BuySignalBadge } from "@/components/BuySignalBadge";
 import { ChartFrame } from "@/components/ChartFrame";
 import { ChartTooltip } from "@/components/ChartTooltip";
 import { StatCard } from "@/components/StatCard";
@@ -19,6 +20,7 @@ import { ThresholdControls } from "@/components/ThresholdControls";
 import { C } from "@/lib/constants";
 import { callClaude } from "@/lib/claude";
 import {
+  computeBuySignal,
   detectBuyZones,
   projectFutureCycles,
 } from "@/lib/analytics";
@@ -90,6 +92,13 @@ export function CyclesTab({
     [priceData, buyZones],
   );
   const projections = cycleData?.projections ?? [];
+  const buySignal = useMemo(
+    () =>
+      projections[0] && priceData.length
+        ? computeBuySignal(priceData, projections[0], thresholds)
+        : null,
+    [projections, priceData, thresholds],
+  );
   const avgGap = cycleData?.avgGap ?? 0;
   const avgDropStr = cycleData?.avgDrop ?? "—";
 
@@ -137,6 +146,8 @@ export function CyclesTab({
         onChange={onThresholdsChange}
         zoneCount={buyZones.length}
       />
+
+      {buySignal && <BuySignalBadge signal={buySignal} />}
 
       <div className="mb-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         <StatCard

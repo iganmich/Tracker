@@ -94,6 +94,30 @@ export const DEFAULT_BUY_ZONE_OPTIONS: BuyZoneOptions = {
   recoveryMin: 0.08,
 };
 
+export interface SignalFactor {
+  score: number;
+  max: number;
+  label: string;
+  detail: string;
+}
+
+export interface BuySignalScore {
+  total: number;
+  rating: "Strong Buy" | "Watch" | "Wait" | "No Signal";
+  ratingColor: string;
+  factors: {
+    time: SignalFactor;
+    price: SignalFactor;
+    pump: SignalFactor;
+    momentum: SignalFactor;
+  };
+  warnings: string[];
+  currentPrice: number;
+  projectedBuyPrice: number;
+  recentHigh: number;
+  proximityPct: number;
+}
+
 export type TabId = "unlock" | "cycles" | "levels" | "backtest";
 
 export interface TabDef {

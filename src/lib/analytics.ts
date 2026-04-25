@@ -1,10 +1,12 @@
 import type {
+  BuySignalScore,
   BuyZone,
   BuyZoneOptions,
   CycleProjection,
   CycleProjectionResult,
   PricePoint,
   SRResult,
+  SignalFactor,
 } from "./types";
 import { DEFAULT_BUY_ZONE_OPTIONS } from "./types";
 import { C } from "./constants";
@@ -254,5 +256,238 @@ export function projectFutureCycles(
     avgGap,
     avgDrop: avgDrop.toFixed(1),
     holdDays,
+  };
+}
+
+function timeFactor(daysAway: number, isActive: boolean): SignalFactor {
+  if (isActive)
+    return {
+      score: 30,
+      max: 30,
+      label: "Time",
+      detail: "Cycle window is active right now",
+    };
+  if (daysAway <= 5)
+    return {
+      score: 25,
+      max: 30,
+      label: "Time",
+      detail: `Buy window in ${daysAway}d (very near)`,
+    };
+  if (daysAway <= 10)
+    return {
+      score: 20,
+      max: 30,
+      label: "Time",
+      detail: `Buy window in ${daysAway}d`,
+    };
+  if (daysAway <= 20)
+    return {
+      score: 10,
+      max: 30,
+      label: "Time",
+      detail: `Buy window in ${daysAway}d (still distant)`,
+    };
+  return {
+    score: 0,
+    max: 30,
+    label: "Time",
+    detail: `Buy window ${daysAway}d away`,
+  };
+}
+
+function priceFactor(
+  currentPrice: number,
+  projectedBuy: number,
+): { factor: SignalFactor; proximityPct: number } {
+  const diff = (currentPrice - projectedBuy) / projectedBuy;
+  const pct = diff * 100;
+  if (diff <= 0)
+    return {
+      factor: {
+        score: 30,
+        max: 30,
+        label: "Price",
+        detail: `At/below projected buy ($${projectedBuy.toFixed(5)})`,
+      },
+      proximityPct: pct,
+    };
+  if (diff <= 0.05)
+    return {
+      factor: {
+        score: 25,
+        max: 30,
+        label: "Price",
+        detail: `Within 5% of buy target (${pct.toFixed(1)}% above)`,
+      },
+      proximityPct: pct,
+    };
+  if (diff <= 0.1)
+    return {
+      factor: {
+        score: 18,
+        max: 30,
+        label: "Price",
+        detail: `Within 10% of buy target (${pct.toFixed(1)}% above)`,
+      },
+      proximityPct: pct,
+    };
+  if (diff <= 0.2)
+    return {
+      factor: {
+        score: 8,
+        max: 30,
+        label: "Price",
+        detail: `${pct.toFixed(1)}% above buy target`,
+      },
+      proximityPct: pct,
+    };
+  return {
+    factor: {
+      score: 0,
+      max: 30,
+      label: "Price",
+      detail: `${pct.toFixed(1)}% above buy target`,
+    },
+    proximityPct: pct,
+  };
+}
+
+function pumpFactor(
+  data: PricePoint[],
+  options: BuyZoneOptions,
+): SignalFactor {
+  const window = data.slice(-20).map((d) => d.price);
+  if (window.length < 4)
+    return {
+      score: 0,
+      max: 25,
+      label: "Pump",
+      detail: "Not enough price history",
+    };
+  const min = Math.min(...window);
+  const max = Math.max(...window);
+  const pump = (max - min) / min;
+  if (pump >= options.pumpMin)
+    return {
+      score: 25,
+      max: 25,
+      label: "Pump",
+      detail: `${(pump * 100).toFixed(1)}% rise in last 20d (algorithm primed)`,
+    };
+  if (pump >= options.pumpMin * 0.5)
+    return {
+      score: 12,
+      max: 25,
+      label: "Pump",
+      detail: `Only ${(pump * 100).toFixed(1)}% rise (need ${(options.pumpMin * 100).toFixed(0)}%)`,
+    };
+  return {
+    score: 0,
+    max: 25,
+    label: "Pump",
+    detail: `No pump (${(pump * 100).toFixed(1)}% range, need ${(options.pumpMin * 100).toFixed(0)}%)`,
+  };
+}
+
+function momentumFactor(data: PricePoint[]): SignalFactor {
+  if (data.length < 8)
+    return {
+      score: 0,
+      max: 15,
+      label: "Momentum",
+      detail: "Not enough history",
+    };
+  const last = data[data.length - 1].price;
+  const weekAgo = data[data.length - 8].price;
+  const change = ((last - weekAgo) / weekAgo) * 100;
+  if (change <= -3)
+    return {
+      score: 15,
+      max: 15,
+      label: "Momentum",
+      detail: `Falling ${change.toFixed(1)}% / 7d (dip in progress)`,
+    };
+  if (change <= 0)
+    return {
+      score: 8,
+      max: 15,
+      label: "Momentum",
+      detail: `Down ${change.toFixed(1)}% / 7d`,
+    };
+  if (change <= 3)
+    return {
+      score: 3,
+      max: 15,
+      label: "Momentum",
+      detail: `Flat (${change.toFixed(1)}% / 7d)`,
+    };
+  return {
+    score: 0,
+    max: 15,
+    label: "Momentum",
+    detail: `Rising ${change.toFixed(1)}% / 7d (no dip yet)`,
+  };
+}
+
+export function computeBuySignal(
+  priceData: PricePoint[],
+  projection: CycleProjection,
+  options: BuyZoneOptions = DEFAULT_BUY_ZONE_OPTIONS,
+): BuySignalScore | null {
+  if (!priceData.length) return null;
+  const currentPrice = priceData[priceData.length - 1].price;
+  const recentHigh = Math.max(...priceData.slice(-20).map((d) => d.price));
+
+  const time = timeFactor(projection.daysAway, projection.isActive);
+  const { factor: price, proximityPct } = priceFactor(
+    currentPrice,
+    projection.estBuyPrice,
+  );
+  const pump = pumpFactor(priceData, options);
+  const momentum = momentumFactor(priceData);
+
+  const total = time.score + price.score + pump.score + momentum.score;
+
+  const warnings: string[] = [];
+  if (pump.score === 0)
+    warnings.push(
+      "No qualifying pump in recent history — buy zone unlikely to fire even on schedule.",
+    );
+  if (price.score <= 8)
+    warnings.push(
+      "Price is well above projected buy target — wait for a dip.",
+    );
+  if (momentum.score === 0 && pump.score > 0)
+    warnings.push(
+      "Price still rising — pump may not be exhausted yet.",
+    );
+
+  let rating: BuySignalScore["rating"];
+  let ratingColor: string;
+  if (total >= 75) {
+    rating = "Strong Buy";
+    ratingColor = C.green;
+  } else if (total >= 50) {
+    rating = "Watch";
+    ratingColor = C.yellow;
+  } else if (total >= 25) {
+    rating = "Wait";
+    ratingColor = C.muted;
+  } else {
+    rating = "No Signal";
+    ratingColor = C.red;
+  }
+
+  return {
+    total,
+    rating,
+    ratingColor,
+    factors: { time, price, pump, momentum },
+    warnings,
+    currentPrice,
+    projectedBuyPrice: projection.estBuyPrice,
+    recentHigh,
+    proximityPct,
   };
 }
