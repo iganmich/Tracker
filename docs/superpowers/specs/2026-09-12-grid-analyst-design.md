@@ -145,11 +145,11 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput;
 - `lower` ∈ percentiles `{0, 2.5, 5, 10, 15}` of window lows.
 - `upper` ∈ percentiles `{85, 90, 95, 97.5, 100}` of window highs.
 - Require `lower < currentPrice < upper`; skip otherwise.
-- `grids` ∈ `{10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 120, 150}`.
+- `grids` ∈ `{10, 15, 20, 25, 30, 40, 50, 60, 80, 100}` (user asked to see every grid count up to 100 on the board).
 - `spacingPct` for a candidate is the **minimum** interval spacing, `(L[grids] − L[grids−1]) / L[grids−1]` for arithmetic (top interval is the tightest), constant for geometric. `profitPerGridPct = spacingPct − 2 × fee`.
 - Constraints (Pionex spot grid): `spacingPct ≥ 3 × 2 × fee` (= 0.3%) so each pair nets profit; per-grid budget at nominal investment must be ≥ `MIN_ORDER_USDT` (5). Nominal investment = 1000 for simulation; yield is linear in investment so one run per (lower, upper, grids).
 - Filter: `timeInRangePct ≥ 90` **and** `monthlyYield > 0` (a flat or bleeding window can produce zero pairs; never divide by a non-positive yield) **and** `buys ≥ 0.5 × trades` — in a monotone rise the seeded sells fill one after another and book a positive yield with no grid buy at all; that is trend profit, not grid profit, and such windows must yield no candidate.
-- Rank by `monthlyYield` desc (raw). Raw yield favours wide spacing, so the top of the raw list is six near-identical 10-grid ranges; the board is a comparison, so keep only the best range **per grid count**. Best = highest-yield entry of that list. Alternatives = the next 5 entries (each a different grid count).
+- Rank by `monthlyYield` desc (raw). Raw yield favours wide spacing, so the top of the raw list is six near-identical 10-grid ranges; the board is a comparison, so keep only the best range **per grid count**. Best = highest-yield entry of that list. Alternatives = all remaining entries (one row per grid count, up to 9).
 - `requiredInvestment = ceil(goalUsd / (monthlyYield × factor))` where `factor = RESOLUTION_FACTOR[resolutionSec]` is passed in `OptimizeInput.factor` (default 1). `Candidate` also carries `liveMonthlyYield = monthlyYield × factor` for display.
 - Cost: ≈ 25 ranges × 12 grid counts = 300 simulations × up to 52k candles × 3 segments ≈ 50 M segment steps worst case (6M window). Each step is a couple of comparisons unless a level is crossed, so this stays around 1 s in JS. Run it inside `useMemo`; if it measurably janks, move to a Web Worker (noted, not planned).
 - `requiredInvestment = goalUsd / monthlyYield`, rounded up to whole USD.

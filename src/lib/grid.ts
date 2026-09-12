@@ -238,7 +238,7 @@ export interface OptimizeOutput {
 export const NOMINAL_INVESTMENT = 1000;
 const LOWER_PCTS = [0, 2.5, 5, 10, 15];
 const UPPER_PCTS = [85, 90, 95, 97.5, 100];
-const GRID_COUNTS = [10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 120, 150];
+export const GRID_COUNTS = [10, 15, 20, 25, 30, 40, 50, 60, 80, 100];
 const MIN_IN_RANGE_PCT = 90;
 /** Pairs must be earned by grid buys, not just by unwinding the seed on a rise (that is trend profit). */
 const MIN_BUY_SHARE = 0.5;
@@ -346,7 +346,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
     requiredInvestment,
     overBudget,
     achievableMonthly,
-    alternatives: bestPerGrids.slice(1, 6),
+    alternatives: bestPerGrids.slice(1), // one row per grid count, so at most GRID_COUNTS.length − 1
     warnings,
     tested,
     kept: candidates.length,

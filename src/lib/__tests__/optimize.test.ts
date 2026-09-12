@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candle } from "@/lib/candles";
-import { MIN_ORDER_USDT, optimizeGrid } from "@/lib/grid";
+import { GRID_COUNTS, MIN_ORDER_USDT, optimizeGrid } from "@/lib/grid";
 
 const H = 3_600_000;
 
@@ -46,7 +46,7 @@ describe("optimizeGrid", () => {
     expect(out.requiredInvestment! * b.result.monthlyYield).toBeLessThan(300 * 1.01 + 1);
     expect(out.overBudget).toBe(false);
     expect(out.alternatives.length).toBeGreaterThan(0);
-    expect(out.alternatives.length).toBeLessThanOrEqual(5);
+    expect(out.alternatives.length).toBeLessThanOrEqual(GRID_COUNTS.length - 1);
     // ranked by raw yield, best first; one row per grid count so the board compares spacing choices
     for (const a of out.alternatives) expect(a.result.monthlyYield).toBeLessThanOrEqual(b.result.monthlyYield);
     const gridCounts = [b, ...out.alternatives].map((c) => c.grids);
