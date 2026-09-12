@@ -41,11 +41,17 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
         <span className="text-[10px]" style={{ color: C.muted }}>spot grid · MON/USDT · fields in Pionex order</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
         <Field label="Investment" unit="USDT" value={investment != null ? Math.round(investment).toLocaleString("en-US") : "—"} />
         <Field label="Lower price" unit="USDT" value={candidate ? fmtPrice(candidate.lower) : "—"} />
         <Field label="Upper price" unit="USDT" value={candidate ? fmtPrice(candidate.upper) : "—"} />
         <Field label="Grid count" unit={candidate?.mode} value={candidate ? String(candidate.grids) : "—"} sub={candidate ? `${fmtPct(candidate.spacingPct * 100, 2)} / grid` : undefined} />
+        <Field
+          label="Stop loss"
+          unit="USDT"
+          value={candidate ? fmtPrice(candidate.stopLoss) : "—"}
+          sub={candidate && investment != null ? `max −${fmtPct(candidate.stopLossPct * 100, 0)} ≈ ${fmtUsd(investment * candidate.stopLossPct)}` : undefined}
+        />
       </div>
 
       {candidate && sized && (

@@ -265,6 +265,23 @@ export interface Candidate {
   rankYield: number; // raw yield used for ranking: worstSliceYield or monthlyYield per rankBy
   liveMonthlyYield: number; // rankYield × factor
   requiredInvestment: number; // ceil(goal / liveMonthlyYield)
+  stopLoss: number; // suggested Pionex stop-loss price: STOP_MARGIN below the lower bound
+  stopLossPct: number; // fraction of the investment lost if the stop fires with every level bought (grid profit ignored)
+  stopHits: number; // candles in the window whose low touched the stop
+}
+
+export const STOP_MARGIN = 0.05;
+
+/** Stop-loss price and worst-case loss for a grid: below `lower` every interval holds MON bought at its level. */
+export function stopLossFor(lower: number, upper: number, grids: number, mode: GridMode, candles: Candle[]) {
+  const stopLoss = lower * (1 - STOP_MARGIN);
+  const L = gridLevels(lower, upper, grids, mode);
+  let invSum = 0;
+  for (let k = 0; k < grids; k++) invSum += 1 / L[k];
+  const stopLossPct = Math.max(0, 1 - (stopLoss * invSum) / grids);
+  let stopHits = 0;
+  for (const c of candles) if (c.low <= stopLoss) stopHits++;
+  return { stopLoss, stopLossPct, stopHits };
 }
 
 export interface OptimizeOutput {
@@ -349,6 +366,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
           rankYield,
           liveMonthlyYield,
           requiredInvestment: Math.ceil(goalUsd / liveMonthlyYield),
+          ...stopLossFor(lower, upper, grids, mode, candles),
         });
       }
     }

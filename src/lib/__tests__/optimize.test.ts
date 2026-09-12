@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candle } from "@/lib/candles";
-import { GRID_COUNTS, MIN_ORDER_USDT, optimizeGrid } from "@/lib/grid";
+import { GRID_COUNTS, MIN_ORDER_USDT, STOP_MARGIN, optimizeGrid, stopLossFor } from "@/lib/grid";
 
 const H = 3_600_000;
 
@@ -104,6 +104,20 @@ describe("optimizeGrid", () => {
     const busy = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "worst", minTradesPerDay: 3 });
     for (const c of [busy.best!, ...busy.alternatives]) expect(c.result.tradesPerMonth / 30).toBeGreaterThanOrEqual(3);
     expect(busy.kept).toBeLessThanOrEqual(worst.kept);
+  });
+
+  it("suggests a stop loss below the lower bound with the worst-case loss", () => {
+    const candles = ranging();
+    const currentPrice = candles[candles.length - 1].close;
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
+    const b = out.best!;
+    expect(b.stopLoss).toBeCloseTo(b.lower * (1 - STOP_MARGIN), 12);
+    expect(b.stopLossPct).toBeGreaterThan(STOP_MARGIN); // at least the margin below the lowest level
+    expect(b.stopLossPct).toBeLessThan(0.5);
+    expect(b.stopHits).toBe(candles.filter((c) => c.low <= b.stopLoss).length);
+    // flat levels: stop 5% below a single-level grid loses exactly 5%
+    const flat = stopLossFor(1, 1.000001, 1, "arithmetic", []);
+    expect(flat.stopLossPct).toBeCloseTo(0.05, 9);
   });
 
   it("handles empty candles", () => {

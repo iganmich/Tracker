@@ -83,7 +83,7 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
                   onSelect(i);
                 }
               }}
-              className="mb-1.5 grid min-h-[44px] cursor-pointer grid-cols-[24px_1fr_1fr] items-center gap-x-2.5 gap-y-1 rounded-[10px] px-3 py-2.5 transition-colors md:grid-cols-[28px_1.4fr_1fr_64px_1fr_110px]"
+              className="mb-1.5 grid min-h-[44px] cursor-pointer grid-cols-[24px_1fr_1fr] items-center gap-x-2.5 gap-y-1 rounded-[10px] px-3 py-2.5 transition-colors md:grid-cols-[28px_1.3fr_1fr_56px_1fr_0.9fr_110px]"
               style={{
                 background: active ? `${C.green}0f` : C.surface,
                 border: `1px solid ${active ? `${C.green}80` : C.border}`,
@@ -117,6 +117,15 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
                   <span style={{ color: c.result.idleDays > Math.round(c.result.days) / 4 ? C.yellow : "#fff" }}>{c.result.idleDays}d</span>
                 </b>
                 <span className="block text-[10px]" style={{ color: C.muted }}>{Math.round(c.result.tradesPerMonth / 30)} rounds / day</span>
+              </span>
+              <span className="text-[10px]" style={{ color: C.muted }}>
+                Stop loss · max loss
+                <b className="block text-[13px] text-white">
+                  {fmtPrice(c.stopLoss)} · <span style={{ color: C.red }}>−{fmtPct(c.stopLossPct * 100, 0)}</span>
+                </b>
+                <span className="block text-[10px]" style={{ color: c.stopHits > 0 ? C.yellow : C.muted }}>
+                  {c.stopHits > 0 ? `touched ${c.stopHits}× in window` : "never touched in window"}
+                </span>
               </span>
               <span className="col-span-3 text-left md:col-span-1 md:text-right">
                 {maxInvestment != null && c.requiredInvestment > maxInvestment ? (
