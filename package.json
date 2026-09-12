@@ -6,10 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:local:up": "docker compose -f infra/local-db/docker-compose.yml up -d --wait",
+    "db:local:down": "docker compose -f infra/local-db/docker-compose.yml down",
+    "db:local:psql": "docker compose -f infra/local-db/docker-compose.yml exec -T postgres psql -U mon -d mon",
+    "candles:ingest": "NODE_OPTIONS='--no-network-family-autoselection --dns-result-order=ipv4first' tsx scripts/ingest-candles.mts"
   },
   "dependencies": {
     "next": "16.2.4",
+    "pg": "^8.23.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1"
@@ -17,11 +22,13 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }

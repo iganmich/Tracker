@@ -13,9 +13,10 @@ Single-page client dashboard for tracking MON (Monad). Four tabs (Unlock, Cycles
 ## Architecture
 
 - **Top-level state** lives in [src/app/dashboard/page.tsx](src/app/dashboard/page.tsx): `priceData`, `loading`, `activeTab`, `thresholds`. Persistent values use `usePersistentState` from [src/lib/storage.ts](src/lib/storage.ts).
-- **Pure analytics** are in [src/lib/analytics.ts](src/lib/analytics.ts). No React imports. `detectBuyZones`, `projectFutureCycles`, `calcSR`, `computeBuySignal` are all pure functions; tabs `useMemo` them.
+- **Pure analytics** are in [src/lib/analytics.ts](src/lib/analytics.ts). No React imports. `detectBuyZones`, `projectFutureCycles`, `calcSR`, `computeBuySignal`, `computeBollingerBands` are all pure functions; tabs `useMemo` them.
 - **Tabs are dumb** — they receive props, render. State for the AI buttons (`busy`, `text`) is local to each tab.
-- **Charts** use recharts inside `<ChartFrame>` which handles skeleton loading and responsive height (mobile vs `lg:`).
+- **Charts** use recharts inside `<ChartFrame>` which handles skeleton loading and responsive height (mobile vs `lg:`). The Cycles tab uses `<ComposedChart>` so it can mix `<Area>` (Bollinger range) with `<Line>` (price + BB upper/lower/middle).
+- **Chart timeframe data** in CyclesTab is a per-tab fetch separate from the dashboard's daily `priceData`. `fetchPriceDataForTimeframe(tf)` in [src/lib/prices.ts](src/lib/prices.ts) hits CoinGecko's `market_chart` endpoint with a per-timeframe `days` param: `5m` → days=1 (5-min), `1h` → days=7 (hourly), `4h` → days=30 hourly aggregated client-side via close-of-bucket, `1d` → days=90&interval=daily. CoinGecko free tier won't give sub-5-min data. Per-timeframe results live in a `useRef`-backed cache so re-clicking a tab doesn't refetch.
 - **AI calls** go through `/api/claude` (server route in [src/app/api/claude/route.ts](src/app/api/claude/route.ts)) — never call Anthropic from the browser. The route streams SSE; the client parses `data: ` lines for `text_delta` events.
 
 ## Conventions
@@ -29,17 +30,32 @@ Single-page client dashboard for tracking MON (Monad). Four tabs (Unlock, Cycles
 
 ## Data shape
 
-- `PricePoint = { date, displayDate, price, unlock }` — one per day from CoinGecko
+- `PricePoint = { date, displayDate, price, unlock }` — one per day from CoinGecko (or hour-stamped for intraday timeframes)
 - `BuyZone` extends `PricePoint` with `drop`, `prevHigh`, `sellDate`, `sellPrice`, `actualReturn` etc.
 - `BuyZoneOptions = { pumpMin, dropMin, dropMax, recoveryMin }` — all 0..1 fractions, defaults in `DEFAULT_BUY_ZONE_OPTIONS`
 - `BuySignalScore` combines four factors → 0-100 + rating + warnings (see [analytics.ts](src/lib/analytics.ts) `computeBuySignal`)
+- `Timeframe = "5m" | "1h" | "4h" | "1d"` from [src/lib/prices.ts](src/lib/prices.ts) — used by CyclesTab's chart pills
+- `EnrichedPricePoint` extends `PricePoint` with optional `bbMiddle`, `bbUpper`, `bbLower`, `bbRange: [lower, upper] | null` (the tuple is consumed by recharts `<Area dataKey="bbRange">` for the shaded band)
+- **Cycle prediction stop-limits** are computed inline in CyclesTab — `estBuyPrice * 1.02` and `estSellPrice * 0.98` (2% buffer to ensure fill). Not persisted.
 
 ## Don't
 
-- Don't add a database. This dashboard is intentionally stateless — refresh-recoverable state goes in `localStorage` only.
+- Don't add a database *for app state*. Refresh-recoverable UI state goes in `localStorage` only. The one database that exists (`infra/local-db/`, see below) holds only public market-data history, is optional, and the app must keep working without it.
 - Don't break the API key boundary. `ANTHROPIC_API_KEY` is server-only; the browser must never see it. Always proxy through `/api/claude`.
 - Don't add `output: "standalone"` or change the Dockerfile without coordinating — both are tuned for Coolify deploy at tracker.xamadu.com.
-- Don't introduce client-side fetches to CoinGecko on every render. The single `useEffect` in DashboardPage runs once on mount; tabs read from the in-memory array.
+- Don't introduce client-side fetches to CoinGecko on every render. DashboardPage fetches the daily price series once on mount; CyclesTab does its own per-timeframe fetch but caches each timeframe in a `useRef` map — refetch only when the user picks a timeframe that hasn't been seen this session.
+- Don't read `payload[0].value` in `<ChartTooltip>` — read from `payload[0].payload` (the row) and pull `price` / `bbUpper` / `bbLower` directly. When a `<Area dataKey="bbRange">` is rendered, recharts puts the `[lower, upper]` tuple at `payload[0].value` and `.toFixed()` will throw. The tuple-from-row pattern is order-independent.
+
+## Local candle database (optional)
+
+MON-tracker has its own Docker Postgres for MON/USDT candle history, used by backtests (Grid Analyst). Same pattern as the AIMS repos' `infra/local-db`, but a **separate stack** (`mon-tracker-local-db`, `postgres:17-alpine`, host port **5460**, user/db `mon`, password `localdev`) so nothing mixes with opsaims/cioaim/cp/execaims and their `db:local:reset` can't delete it. It never connects to Neon or any deployed environment.
+
+- `npm run db:local:up` / `db:local:down` / `db:local:psql` — manage the container. The table is created on first boot from [infra/local-db/init.sql](infra/local-db/init.sql).
+- `npm run candles:ingest` — pulls KuCoin `MON-USDT` candles at 1min / 5min / 15min / 1hour / 1day from launch (2025-11-24) and upserts into `mon_candles`. Incremental: resumes from the last stored candle. `-- --res 5min` for one resolution, `-- --full` to re-pull everything. Refuses non-localhost hosts.
+- `MON_DATABASE_URL=postgresql://mon:localdev@localhost:5460/mon` in `.env.local` points the app at it. Unset (as on Coolify today) → server routes fall back to live KuCoin fetches.
+- Table `mon_candles (exchange, symbol, resolution_sec, time, open, high, low, close, volume, turnover, ingested_at)`, PK `(exchange, symbol, resolution_sec, time)`. KuCoin omits minutes with zero trades, so 1min has gaps; consumers must not assume a fixed stride.
+- Why KuCoin: it is the only source found with real spot OHLC at minute resolution back to launch and no depth cap. Pionex's public API exposes only `MON_USDT_PERP` (10,000-candle cap per interval); Binance/Bybit are geo-blocked from the dev machine; Gate caps at 10,000 points; CoinGecko is daily-only beyond 90 days.
+- On this dev machine IPv6 is broken and Node `fetch` hangs unless family auto-selection is off; the `candles:ingest` script sets `NODE_OPTIONS='--no-network-family-autoselection --dns-result-order=ipv4first'` for that reason. `next dev` routes that call KuCoin live need the same prefix here.
 
 ## Deployment
 

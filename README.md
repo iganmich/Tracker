@@ -20,7 +20,7 @@ Price intelligence dashboard for **MON (Monad)** — unlock tracker, investment 
 | Styling | Tailwind v4 + CSS variables |
 | Charts | recharts |
 | Font | JetBrains Mono via `next/font/google` |
-| Data | CoinGecko `coins/monad` daily prices (mock-data fallback) |
+| Data | CoinGecko `coins/monad` daily prices (mock-data fallback); KuCoin `MON-USDT` minute candles in a local Postgres for backtests |
 | AI | Server-side proxy to Anthropic at `/api/claude` |
 | Deploy | Coolify (Hetzner), Dockerfile-based, Next.js standalone output |
 
@@ -67,6 +67,16 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) — redirects to `/dashboard`.
 
 If CoinGecko is unreachable the dashboard transparently falls back to embedded mock data so the UI is always testable offline.
+
+## Local candle database (optional, for backtests)
+
+```bash
+npm run db:local:up        # own Postgres 17 container on port 5460 (separate from the AIMS stacks)
+npm run candles:ingest     # KuCoin MON-USDT candles, 1min → 1day, from launch; incremental on re-run
+echo "MON_DATABASE_URL=postgresql://mon:localdev@localhost:5460/mon" >> .env.local
+```
+
+Without `MON_DATABASE_URL` the app fetches candles live from KuCoin instead.
 
 ## Deployment (Coolify)
 

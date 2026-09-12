@@ -1,0 +1,38 @@
+# MON-tracker's own local Postgres. Same pattern as the AIMS repos (opsaims, cioaim, cp, execaims),
+# but a separate stack with its own volume so nothing here mixes with those databases and none of
+# their `db:local:reset` commands can delete MON history.
+#
+#   npm run db:local:up      start (table is created on first boot from init.sql)
+#   npm run db:local:down    stop (volume, and therefore the data, survives)
+#   npm run db:local:psql    open psql
+#   npm run candles:ingest   fill / refresh the candle history from KuCoin
+#
+# No wsproxy: this app uses plain `pg` over TCP, not the Neon serverless driver.
+# Port 5460 on the host — 5400/5401 (cioaim), 5432/5433 (opsaims), 5442/5443 (execaims),
+# 5450/5451 (cp) are taken by the sibling stacks. Override with MON_PG_PORT in infra/local-db/.env.
+#
+# Nothing here is reachable from, or reaches, Neon or any deployed environment.
+
+name: mon-tracker-local-db
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mon
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: mon
+    ports:
+      - "${MON_PG_PORT:-5460}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mon -d mon"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  pgdata:
