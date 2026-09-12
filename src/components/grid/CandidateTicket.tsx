@@ -88,10 +88,12 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
         </div>
       )}
 
-      {candidate && sized && (
+      {candidate && sized && investment != null && (
         <p className="m-0 mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: C.muted }}>
-          <span>Expected <b style={{ color: C.green }}>{fmtUsd(sized.monthlyProfit)} / month</b></span>
-          <span>{fmtPct(candidate.liveMonthlyYield * 100)} monthly yield</span>
+          {/* the tab pre-multiplies monthlyProfit by the resolution factor; recover it so the worst month gets the same correction */}
+          <span>Worst month <b style={{ color: C.green }}>{fmtUsd(investment * sized.worstSliceYield * (sized.monthlyYield > 0 ? sized.monthlyProfit / (sized.monthlyYield * investment) : 1))} / month</b></span>
+          <span>average <b className="text-white">{fmtUsd(sized.monthlyProfit)} / month</b></span>
+          <span>{fmtPct(candidate.result.worstSliceYield * 100)} worst · {fmtPct(candidate.result.monthlyYield * 100)} avg raw yield</span>
           <span>{fmtPct(candidate.profitPerGridPct * 100, 2)} profit per grid after fees</span>
           <span>{Math.round(sized.tradesPerMonth).toLocaleString()} trades / month</span>
           <span>unrealized {fmtUsd(sized.unrealizedPnl)} at window end</span>
