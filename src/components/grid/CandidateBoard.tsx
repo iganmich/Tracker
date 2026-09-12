@@ -83,7 +83,7 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, curren
                 </span>
                 <Bar fraction={1} color={`${C.blue}59`} marker={pos} />
               </span>
-              <span className="text-[10px]" style={{ color: C.muted }}>
+              <span className="whitespace-nowrap text-[10px]" style={{ color: C.muted }}>
                 Yield / mo
                 <b className="block text-[13px] text-white">{fmtPct(c.liveMonthlyYield * 100)}</b>
                 <Bar fraction={c.result.monthlyYield / topYield} color={C.green} />
