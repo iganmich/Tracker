@@ -74,7 +74,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
                   <tr key={r.label} style={{ background: chosen ? `${C.green}12` : undefined, color: chosen ? "#fff" : C.text }}>
                     <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.label}</td>
                     <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.stopPrice === null ? "—" : fmtPrice(r.stopPrice)}</td>
-                    <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: C.red }}>−{fmtPct(r.worstCasePct * 100, 0)}</td>
+                    <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: C.red }}>{r.stopPrice === null ? "unbounded" : `−${fmtPct(r.worstCasePct * 100, 0)}`}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.exits}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: r.worstExitLossPct > 0 ? C.red : undefined }}>{r.worstExitLossPct > 0 ? `−${fmtPct(r.worstExitLossPct * 100)} · ${fmtUsd(investment * r.worstExitLossPct)}` : "—"}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.daysOut > 0 ? r.daysOut.toFixed(1) : "—"}</td>
