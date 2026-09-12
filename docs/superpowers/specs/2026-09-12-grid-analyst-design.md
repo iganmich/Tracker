@@ -1,7 +1,7 @@
 # Grid Analyst — Design Spec
 
 **Date:** 2026-09-12
-**Status:** Approved by user 2026-09-12. Data source finalised on Pionex perp candles after live-bot calibration (see Data facts). UI direction: pending user's pick of A / B / C mockup.
+**Status:** Approved by user 2026-09-12. Data source finalised on Pionex perp candles after live-bot calibration (see Data facts). UI direction C (Comparison Board) chosen by user.
 
 ## Goal
 
@@ -161,27 +161,27 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput;
 - Over budget.
 - Backtest window shorter than 30 days.
 
-### 5. UI — `src/components/tabs/GridAnalystTab.tsx`
+### 5. UI — direction C "Comparison Board" (user's pick from three mockups, 2026-09-12)
 
-Props: `priceData: PricePoint[]` (for fallback), `currentPrice: number | null`.
+Files: `src/components/tabs/GridAnalystTab.tsx` (state, fetch, memo, layout) composed from `src/components/grid/GridInputs.tsx`, `CandidateBoard.tsx`, `CandidateTicket.tsx`, `GridChart.tsx`.
 
-Local state (persisted under `mon.grid` via `usePersistentState`, type-guarded):
+Props into the tab: `priceData: PricePoint[]` (fallback source), `currentPrice: number | null` (header price; the tab prefers the last candle close when candles are loaded).
+
+Settings (persisted under `mon.grid`, type-guarded):
 ```ts
 interface GridSettings { goalUsd: number; maxInvestment: number | null; window: GridWindow; mode: GridMode }
-DEFAULT: { goalUsd: 100, maxInvestment: null, window: "3m", mode: "arithmetic" }
+DEFAULT_GRID_SETTINGS = { goalUsd: 500, maxInvestment: null, window: "3m", mode: "arithmetic" }
 ```
 
-Layout (mobile-first, one column → `lg:` two columns):
+Layout, top to bottom (mobile-first single column; the board rows collapse to a 3-column grid under 820 px):
 
-1. **Inputs card** — goal (number input, USD), max investment (number input, blank = none), window pills (3M / 6M / Max), mode toggle (Arithmetic / Geometric). All controls `min-h-[44px]`.
-2. **Recommended bot card** — the four Pionex fields first, large, tabular-nums, in Pionex's form order: Investment (USDT), Lower price, Upper price, Grid count. Prices formatted to 5 decimals (MON ≈ 0.02). Then a stats row via `StatCard`: spacing %, profit/grid %, expected monthly grid profit, trades/month, time in range, max drawdown, unrealized P&L at window end. Warnings rendered as amber lines above the stats.
-3. **Chart** — `ChartFrame` + recharts `ComposedChart`: close price `Line`, shaded `Area` between lower and upper (tuple `rangeBand: [lower, upper]` on every row, read from `payload[0].payload` per AGENTS.md rule), grid levels as `ReferenceLine`s — if `grids > 30`, draw every `ceil(grids/30)`-th level. Current price `ReferenceLine` dashed.
-4. **Alternatives table** — top 5: lower, upper, grids, spacing, monthly yield, required investment, time in range. Row click applies that candidate to the result card (local state `selectedIdx`).
-5. Footer note: "Backtest on KuCoin MON/USDT {5|15}-minute candles · Pionex fee 0.05%/side · profit-per-grid model matches Pionex to <1% · past range ≠ future range".
+1. **Inputs card** (`GridInputs`) — goal (number input, USD), max investment (number input, blank = none), window pills 1M / 3M / 6M / MAX, mode pills ARITH / GEO. All controls `min-h-[44px]`, labelled, ids stable.
+2. **Board** (`CandidateBoard`) — header "Candidates that reach $<goal> / month" + one line "<tested> configurations tested, <kept> kept price in range ≥ 90 %". Then up to 6 rows (best + 5 alternatives), rank 1 first. Each row: rank · range `lower – upper` with a thin bar showing where the current price sits inside it · yield / month with a bar relative to rank 1 · grid count · in-range % and max drawdown · required investment in green ("to earn $goal"). Rows are `role="button"`, keyboard-selectable, `aria-pressed` marks the selected one; rank 1 selected by default. Selecting a row re-runs `simulateGrid` at that row's required investment for the ticket.
+3. **Ticket** (`CandidateTicket`) — "Candidate N · what to type into Pionex": the four fields large (Investment USDT, Lower, Upper, Grids) in Pionex's order, then "Expected $X / month · Y % yield · Z trades / month", then the warning lines (amber) from the optimizer plus "approximate: daily fallback data" when `source` is the CoinGecko fallback, and "hourly candles capture ~64 % of live fills — shown figures are corrected × 1.57" when a factor ≠ 1 applies.
+4. **Chart** (`GridChart`) — `ChartFrame` + recharts `ComposedChart`: close price `Line`, shaded `Area` from a `[lower, upper]` tuple (read from `payload[0].payload`, per AGENTS.md), grid `ReferenceLine`s thinned to ≤ 30, dashed current-price line. Candles are down-sampled to ≤ 600 points for drawing (every n-th close); the simulation always uses the full set.
+5. Footer: "Backtest on Pionex MON_USDT_PERP <5|15|30|60>-minute candles · <local db | live> · fee 0.05 %/side · calibrated on one live-bot day · past range ≠ future range".
 
-Loading: skeleton via `ChartFrame loading`; result card shows "—" placeholders. Error: fallback to CoinGecko candles and a warning line, never a blank tab.
-
-Computation: `useMemo(() => optimizeGrid(...), [windowCandles, goalUsd, maxInvestment, mode, currentPrice])`. When `currentPrice` is `null` or `windowCandles` is empty the memo returns `null` and the result card shows "—" placeholders with no warnings. When `overBudget` is true the large Investment field still shows `requiredInvestment` (what the goal actually needs), the over-budget warning names `maxInvestment`, and the expected-monthly-profit stat shows `achievableMonthly` labelled "at your max investment". Selected alternative re-simulated at its required investment for display only.
+States: loading → inputs enabled, board shows 3 skeleton rows, chart skeleton. Fetch error → fallback candles from `priceData` with the daily-fallback warning; never a blank tab. `currentPrice` null and no candles → board says "Waiting for price data".
 
 ### 6. Wiring
 
