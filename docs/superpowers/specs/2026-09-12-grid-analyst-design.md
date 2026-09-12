@@ -1,7 +1,7 @@
 # Grid Analyst — Design Spec
 
 **Date:** 2026-09-12
-**Status:** Spec review passed (2 rounds); revised to hourly candles after live-bot calibration; awaiting user review
+**Status:** Spec review passed (2 rounds); data source revised to KuCoin 5-minute candles after live-bot calibration; awaiting user review
 
 ## Goal
 
@@ -15,46 +15,47 @@ Add a fifth dashboard tab, **⚡ Grid Analyst**, that turns a monthly USD profit
 | Goal metric | Grid profit only (realized pair profit) | Matches Pionex "Grid Profit"; independent of where price ends |
 | Algorithm | Brute-force backtest search | Deterministic, explainable, fast enough client-side |
 | Budget cap | Optional "max investment" input | Tells user when a goal is unrealistic |
-| Price history | Pionex `MON_USDT_PERP` **hourly** klines via paginating server proxy | Only source with high/low at sub-daily resolution. MON/USDT spot grid exists in the Pionex app (user has one running) but the spot pair is not exposed by the public API; perp tracks spot within 0.1% |
+| Price history | **KuCoin spot `MON-USDT` 5-minute candles** via paginating server proxy (15-minute for the Max window) | Only source found with real spot OHLC at minute resolution back to launch day. KuCoin last price matches Pionex within 0.2%. MON/USDT spot grid exists in the Pionex app (user has one running) but Pionex's public API exposes only the perp, capped at 10,000 candles per interval |
 | Fallback | CoinGecko daily series already loaded by the dashboard | high = low = close, daily only, flagged as approximate |
-| Windows | 3M (90 days ≈ 2,160 hourly candles), 6M (180 days ≈ 4,320), Max (all from launch 2025-11-24, ≈ 7,000) | 12M not possible — MON launched 2025-11-24. Perp candles before launch (from 2025-10-10) are dropped by `sliceWindow` |
+| Windows | 3M (90 days ≈ 25,900 five-minute candles), 6M (180 days ≈ 51,800), Max (all from launch 2025-11-24, ≈ 28,000 fifteen-minute candles) | 12M not possible — MON launched 2025-11-24 15:00 UTC. Resolution is chosen by window: 5m for 3M/6M, 15m for Max (keeps the largest payload ≈ 52k candles) |
 | Fees | 0.05% per side (Pionex spot maker/taker) | Constant, `GRID_FEE_RATE` |
 
 ## Data facts (verified 2026-09-12)
 
-- Pionex `GET /api/v1/market/klines?symbol=MON_USDT_PERP&interval=1D&limit=500` → 338 daily candles from 2025-10-10, public, no auth, **no CORS header** (browser cannot call it directly).
-- Pionex klines paginate backwards with `endTime=<oldest time − 1>`; verified for 60M and 15M. 500 hourly candles per page → 3M = 5 pages, 6M = 9, Max ≈ 15. Rate limit 10 req/s per IP.
-- **Why hourly, not daily:** the user's live Pionex bot (0.023–0.03, 80 grids, 23,720 USDT) completed 83 rounds in its first 24 h. A daily candle walked open→low→high→close simulates ≈ 25 rounds for that day; hourly candles simulate ≈ 56. Hourly is the best accuracy the 500-candle pagination budget allows for a 6-month window. 15M would be closer still but needs 18 pages for 3M alone; deferred.
-- **Calibration reference (2026-09-11 13:08 → 09-12 12:40 UTC+7):** investment 23,719.89 · range 0.023–0.030 · 80 grids arithmetic (spacing ≈ 0.29–0.38 %) · 83 rounds · grid profit +78.44 USDT (+0.33 % / day, 123 % annualized) · trend PnL −171.65. Per-pair nominal model: q = 296.5, gross ≈ 1.11, net of 0.05 %×2 ≈ 0.81 → 83 × 0.81 ≈ 67 vs 78.44 real (−14 %). Acceptable for sizing; state it in the footer.
-- CoinGecko free tier: daily back to launch (294 points), hourly for 90 days, 5-min for 1 day, hard cap 365 days. CORS allowed.
-- Pionex spot symbol list (407) contains no MON pair. Perp list contains `MON_USDT_PERP`. Perp price tracks CoinGecko spot within 0.1%.
+- **KuCoin** `GET https://api.kucoin.com/api/v1/market/candles?type=5min&symbol=MON-USDT&startAt=<s>&endAt=<s>` → up to 1,500 candles per request, newest first, rows `[time_s, open, high, low, close, volume, turnover]` as strings. Types `1min`, `5min`, `15min`, `1hour` all reach back to **2025-11-24 15:00 UTC** (launch day) with no depth cap. Public, no auth, **no CORS header** (server proxy required). Minutes with zero trades are omitted (gaps), which the simulator tolerates. Last price 0.02329 vs Pionex 0.02333.
+- **Pionex** klines: only `MON_USDT_PERP`, hard cap of 10,000 candles per interval (5M → 35 days, 15M → 104 days, 60M → full history). Paginates backwards with `endTime`. No CORS. Kept only as documentation; not used by the tab.
+- **Binance** and **Bybit** are geo-blocked from the user's location (and possibly from the Hetzner server); not used. **Gate** caps at 10,000 points. **OKX** lists MON-USDT but its candle history was not verified.
+- **CoinGecko** free tier: daily back to launch, hourly 90 days, 5-min 1 day, hard cap 365 days. CORS allowed. Used only as the daily fallback.
+- **Why minute candles:** the user's live Pionex bot (0.023–0.030, 80 grids, 23,720 USDT) completed 83 rounds in its first 24 h, with round trips as short as 2 minutes (buy 08:58, sell 09:00). A daily candle walked open→low→high→close simulates ≈ 25 of those rounds, hourly ≈ 56. Five-minute candles capture most of them.
+- **Per-pair calibration (Pionex transaction #81):** buy 298.50 USDT at 0.02335, sell at 0.02344, fees 0.1487 + 0.1492, Pionex profit **0.8482**. Spec formula: `coins = 298.50 / 0.02335 = 12,784`; `12,784 × 0.00009 − 0.0005 × 12,784 × (0.02335 + 0.02344) = 1.1506 − 0.2991 = 0.8515`. Within 0.4 % — the profit model in section 3 is correct; remaining error comes only from fill counting.
+- **Bot-level calibration (first 23.5 h):** grid profit +78.44 USDT = +0.33 %/day (123 % annualized), 83 rounds. The section 7 optimizer test uses this as a sanity bound: a simulation of the same parameters over the same day on 5-minute candles should land within ±35 % of 83 rounds.
 
 ## Architecture
 
-### 1. Server route — `src/app/api/klines/route.ts`
+### 1. Server route — `src/app/api/candles/route.ts`
 
-- `GET /api/klines?days=90` (integer 1..400; the route maps to `ceil(days×24/500)` pages of `interval=60M&limit=500`, paginating backwards with `endTime`)
-- Proxies to Pionex klines for `MON_USDT_PERP`. Symbol is a server constant, not a query param (no open proxy).
-- Validates `days` as integer 1..400. Anything else → 400. Pages are fetched sequentially (never parallel — 10 req/s IP limit shared with the dip bot on the same server). Stops early when a page returns fewer than 500 candles or the oldest candle is before `MON_LAUNCH_MS`.
-- Upstream shape: `{ result: true, data: { klines: [{ time: number(ms), open: string, high: string, low: string, close: string, volume: string }] } }`, newest first. The route parses the strings with `Number`, drops any candle with a non-finite field, sorts ascending by `time`, and returns `{ candles: Candle[] }`.
-- In-memory module cache keyed by `days` with 5-min TTL (so repeat views do not re-page Pionex), plus `Cache-Control: public, max-age=300`.
-- On upstream failure → 502 with `{ error }`.
+- `GET /api/candles?days=<1..400>`
+- Resolution rule (server-side, not a query param): `days ≤ 180 → 5min`, else `15min`.
+- Proxies KuCoin `market/candles` for `MON-USDT` (symbol and host are server constants; no open proxy). Pages backwards from `now` in `1500 × candleSeconds` windows via `startAt`/`endAt`, sequentially (KuCoin public weight limit is generous but keep it polite), stopping at `MON_LAUNCH_S = 1763967600` (2025-11-24 15:00 UTC) or when a page comes back empty. 3M ≈ 18 requests, 6M ≈ 35, Max (15min) ≈ 19.
+- Parses each row `[time_s, open, high, low, close, volume, turnover]` with `Number`, drops rows with any non-finite field, sorts ascending by time, de-duplicates on time.
+- Response `{ resolutionSec: number, candles: number[][] }` where each candle is `[timeMs, open, high, low, close]` (compact array, no volume — halves the payload; 52k candles ≈ 2.5 MB raw, ≈ 500 KB gzipped).
+- In-memory module cache keyed by `days` with 5-min TTL, plus `Cache-Control: public, max-age=300`. A cache miss for Max can take several seconds; the tab shows the chart skeleton meanwhile.
+- Validation: `days` must be an integer 1..400 → otherwise 400. Upstream failure or `code !== "200000"` → 502 `{ error }`.
 
-### 2. Client data — `src/lib/klines.ts`
+### 2. Client data — `src/lib/candles.ts`
 
 ```ts
-export interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
+export interface Candle { time: number; open: number; high: number; low: number; close: number }
 export type GridWindow = "3m" | "6m" | "max";
-export const GRID_WINDOW_DAYS: Record<GridWindow, number | null> = { "3m": 90, "6m": 180, max: null };
-export const MON_LAUNCH_MS = Date.UTC(2025, 10, 24); // 2025-11-24; `sliceWindow` always drops candles before this, then applies the window
+export const GRID_WINDOW_DAYS: Record<GridWindow, number> = { "3m": 90, "6m": 180, max: 400 };
+export const MON_LAUNCH_MS = Date.UTC(2025, 10, 24, 15); // 2025-11-24 15:00 UTC
 
-export const CANDLE_MS = 3_600_000; // hourly
-export async function fetchCandles(days: number): Promise<Candle[]>; // calls /api/klines?days=, throws on !ok
-export function sliceWindow(candles: Candle[], w: GridWindow): Candle[];
+export async function fetchCandles(days: number): Promise<{ resolutionSec: number; candles: Candle[] }>; // calls /api/candles?days=, expands compact rows, throws on !ok
 export function candlesFromPricePoints(points: PricePoint[]): Candle[]; // fallback, o=h=l=c=price, daily spacing
 ```
 
-- Tab fetches `days = 400` (Max) once on mount, stores in state; window slicing is a `useMemo`. No refetch on pill change. `sliceWindow` keeps candles with `time ≥ max(MON_LAUNCH_MS, lastTime − days×86_400_000)`.
+- The tab fetches **per window** on demand (`GRID_WINDOW_DAYS[window]`) because 5m-vs-15m resolution differs by window, and caches each result in a `useRef` map for the session (same pattern as CyclesTab's timeframe cache). Switching back to a seen window does not refetch.
+- `resolutionSec` is displayed in the footer ("5-minute candles") and passed to `simulateGrid` so `days` is computed correctly.
 
 ### 3. Simulator — `src/lib/grid.ts` (pure, no React)
 
@@ -67,18 +68,18 @@ export interface GridResult {
   monthlyProfit: number;     // monthlyYield * investment
   trades: number;            // completed pairs (every sell fill = one pair)
   tradesPerMonth: number;
-  timeInRangePct: number;    // 0..100, share of candles whose close is within [lower, upper] (candle-count based, so hourly and daily fallback behave the same)
+  timeInRangePct: number;    // 0..100, share of candles whose close is within [lower, upper] (candle-count based, resolution-agnostic)
   maxDrawdownPct: number;    // worst peak-to-trough of equity (cash + coins*close) over candle closes, as % of peak, 0..100
   unrealizedPnl: number;     // equity_end - investment - gridProfit  (so gridProfit + unrealizedPnl = total P&L exactly)
   breakouts: number;         // candles with close outside range
-  days: number;              // (lastTime − firstTime + candleMs) / 86_400_000, candleMs inferred from the median gap
+  days: number;              // (lastTime − firstTime + candleMs) / 86_400_000; candleMs passed in (resolutionSec × 1000)
   levels: number[];          // grids + 1 price levels, ascending
   cashEnd: number;           // USD cash at window end
   coinsEnd: number;          // MON held at window end
 }
 export const GRID_FEE_RATE = 0.0005;
 export function gridLevels(lower: number, upper: number, grids: number, mode: GridMode): number[];
-export function simulateGrid(candles: Candle[], p: GridParams, feeRate = GRID_FEE_RATE): GridResult;
+export function simulateGrid(candles: Candle[], p: GridParams, candleMs: number, feeRate = GRID_FEE_RATE): GridResult;
 ```
 
 **Fill model — one order per grid interval (mirrors Pionex spot grid):**
@@ -130,6 +131,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput;
 - Constraints (Pionex spot grid): `spacingPct ≥ 3 × 2 × fee` (= 0.3%) so each pair nets profit; per-grid budget at nominal investment must be ≥ `MIN_ORDER_USDT` (5). Nominal investment = 1000 for simulation; yield is linear in investment so one run per (lower, upper, grids).
 - Filter: `timeInRangePct ≥ 90` **and** `monthlyYield > 0` (a flat or bleeding window can produce zero pairs; never divide by a non-positive yield).
 - Rank by `monthlyYield` desc. Best = first. Alternatives = next 5.
+- Cost: ≈ 25 ranges × 12 grid counts = 300 simulations × up to 52k candles × 3 segments ≈ 50 M segment steps worst case (6M window). Each step is a couple of comparisons unless a level is crossed, so this stays around 1 s in JS. Run it inside `useMemo`; if it measurably janks, move to a Web Worker (noted, not planned).
 - `requiredInvestment = goalUsd / monthlyYield`, rounded up to whole USD.
 - Check `requiredInvestment / grids ≥ MIN_ORDER_USDT`; if not, add warning "Investment too small for N grids — raise goal or reduce grids".
 
@@ -156,7 +158,7 @@ Layout (mobile-first, one column → `lg:` two columns):
 2. **Recommended bot card** — the four Pionex fields first, large, tabular-nums, in Pionex's form order: Investment (USDT), Lower price, Upper price, Grid count. Prices formatted to 5 decimals (MON ≈ 0.02). Then a stats row via `StatCard`: spacing %, profit/grid %, expected monthly grid profit, trades/month, time in range, max drawdown, unrealized P&L at window end. Warnings rendered as amber lines above the stats.
 3. **Chart** — `ChartFrame` + recharts `ComposedChart`: close price `Line`, shaded `Area` between lower and upper (tuple `rangeBand: [lower, upper]` on every row, read from `payload[0].payload` per AGENTS.md rule), grid levels as `ReferenceLine`s — if `grids > 30`, draw every `ceil(grids/30)`-th level. Current price `ReferenceLine` dashed.
 4. **Alternatives table** — top 5: lower, upper, grids, spacing, monthly yield, required investment, time in range. Row click applies that candidate to the result card (local state `selectedIdx`).
-5. Footer note: "Backtest on Pionex MON_USDT_PERP hourly candles · fees 0.05%/side · simulated fills run conservative vs live (≈ −30% in choppy markets) · past range ≠ future range".
+5. Footer note: "Backtest on KuCoin MON/USDT {5|15}-minute candles · Pionex fee 0.05%/side · profit-per-grid model matches Pionex to <1% · past range ≠ future range".
 
 Loading: skeleton via `ChartFrame loading`; result card shows "—" placeholders. Error: fallback to CoinGecko candles and a warning line, never a blank tab.
 
@@ -182,12 +184,13 @@ Add **vitest** (devDependency, `npm test` script, `vitest.config.ts` with `@` al
 - Flat candles (o=h=l=c inside range) with `feeRate = 0`: zero trades, `maxDrawdownPct === 0`, `unrealizedPnl === 0`. (At the default fee the seed buys cost fees, so drawdown is small but positive; that is expected, not a bug.)
 - Fees: with `feeRate = 0`, profit equals gross; with default fee, profit strictly lower.
 
-**klines.test.ts**
-- `sliceWindow("3m")` keeps candles within the last 90 days of the newest candle; `"max"` keeps everything from `MON_LAUNCH_MS`; candles before launch are always dropped.
+**candles.test.ts**
+- `fetchCandles` expands compact `[t,o,h,l,c]` rows into `Candle` objects and rejects on non-OK.
 - `candlesFromPricePoints` sets o=h=l=c.
 
 **optimize.test.ts**
 - Synthetic ranging market: `best` is non-null, `lower < currentPrice < upper`, `requiredInvestment × monthlyYield ≈ goalUsd`.
+- **Live-bot sanity bound** (fixture: KuCoin 5-minute candles for 2026-09-11 06:08 → 09-12 05:40 UTC, checked into `src/lib/__tests__/fixtures/`): `simulateGrid` with `lower 0.023, upper 0.030, grids 80, investment 23719.89, arithmetic` must report `trades` within ±35 % of 83 and `gridProfit` within ±35 % of 78.44. This pins the fill-counting accuracy that the whole tool depends on.
 - With `maxInvestment` below required: `overBudget === true`, `achievableMonthly === maxInvestment × monthlyYield`.
 - Strongly trending synthetic data: `best === null` and a warning is present.
 
@@ -196,7 +199,8 @@ Add **vitest** (devDependency, `npm test` script, `vitest.config.ts` with `@` al
 ## Out of scope (v1)
 
 - Futures grid, leverage, long/short modes.
-- 15-minute backtests (18+ pages per 3M; revisit if hourly proves too conservative).
+- 1-minute backtests (KuCoin has them; 5× the data for marginal gain).
+- Resolution as a user control (fixed by window in v1).
 - Auto-creating the bot via API (Pionex has no public grid-bot endpoint).
 - AI commentary button.
 - Trailing / infinity grid variants.
@@ -204,5 +208,7 @@ Add **vitest** (devDependency, `npm test` script, `vitest.config.ts` with `@` al
 ## Risks
 
 - **MON spot not on Pionex API.** If the user cannot actually open a MON spot grid on Pionex, the numbers are still valid for any exchange's spot grid on MON, but the "Pionex order" framing should be softened. Flag in UI footer.
-- **Candle path approximation.** Hourly candles still under-count fills in choppy hours (calibration: ≈ 56 simulated vs 83 real rounds on the live bot's first day, so expect the tool to be conservative by roughly a third in that regime). The CoinGecko daily fallback is far worse. Stated in the footer.
+- **Candle path approximation.** Five-minute candles still miss sub-5-minute whipsaws; the live-bot test bounds the error at ±35 %. The CoinGecko daily fallback is far worse and is labelled as such.
+- **KuCoin vs Pionex liquidity.** KuCoin's MON book may be thinner or thicker than Pionex's; highs and lows can differ by a tick. Immaterial at 0.3 % grid spacing.
+- **Payload and compute.** 6M at 5-minute is ≈ 52k candles (≈ 500 KB gzipped) and ≈ 1 s of optimizer time. Max window is served at 15-minute to stay in that envelope.
 - **Range percentiles** from a trending window may produce a range that the price will leave soon; the 90% in-range filter and the "near edge" warning mitigate but do not eliminate this.
