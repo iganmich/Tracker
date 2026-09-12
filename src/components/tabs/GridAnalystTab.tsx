@@ -90,8 +90,10 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
       currentPrice: price,
       mode: settings.mode,
       factor,
+      rankBy: settings.rankBy,
+      minTradesPerDay: settings.minTradesPerDay,
     });
-  }, [set, candleMs, price, settings.goalUsd, settings.maxInvestment, settings.mode, factor]);
+  }, [set, candleMs, price, settings.goalUsd, settings.maxInvestment, settings.mode, settings.rankBy, settings.minTradesPerDay, factor]);
 
   const candidates = useMemo(() => (out?.best ? [out.best, ...out.alternatives] : []), [out]);
   const selectedIdx = Math.min(selected, Math.max(0, candidates.length - 1));
@@ -140,6 +142,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
         onSelect={setSelected}
         goalUsd={settings.goalUsd}
         maxInvestment={settings.maxInvestment}
+        rankBy={settings.rankBy}
         currentPrice={price}
         tested={out?.tested ?? 0}
         kept={out?.kept ?? 0}

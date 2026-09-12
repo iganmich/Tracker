@@ -25,6 +25,10 @@ export interface GridResult {
   levels: number[]; // grids + 1 ascending
   cashEnd: number;
   coinsEnd: number;
+  sliceProfits: number[]; // net grid profit per consecutive 30-day slice (continuous bot, not re-seeded)
+  worstSliceYield: number; // min over slices ≥ 20 days of sliceProfit / investment (a per-30-day yield); = monthlyYield if no full slice
+  activeDays: number; // distinct calendar days with ≥ 1 completed pair
+  idleDays: number; // days (rounded) − activeDays
 }
 
 export const GRID_FEE_RATE = 0.0005; // Pionex spot, per side
@@ -57,7 +61,7 @@ function emptyResult(levels: number[]): GridResult {
   return {
     gridProfit: 0, monthlyYield: 0, monthlyProfit: 0, trades: 0, buys: 0, tradesPerMonth: 0,
     timeInRangePct: 0, maxDrawdownPct: 0, unrealizedPnl: 0, breakouts: 0, days: 0,
-    levels, cashEnd: 0, coinsEnd: 0,
+    levels, cashEnd: 0, coinsEnd: 0, sliceProfits: [], worstSliceYield: 0, activeDays: 0, idleDays: 0,
   };
 }
 
@@ -131,7 +135,20 @@ export function simulateGrid(
   let peak = investment;
   let maxDD = 0;
   let breakouts = 0;
+  const firstTime = candles[0].time;
+  const SLICE_MS = 30 * DAY_MS;
+  const sliceProfits: number[] = [];
+  const activeDaySet = new Set<number>();
+  let sliceStartProfit = 0;
+  let sliceIdx = 0;
   for (const c of candles) {
+    const idx = Math.floor((c.time - firstTime) / SLICE_MS);
+    while (idx > sliceIdx) {
+      sliceProfits.push(gridProfit - sliceStartProfit);
+      sliceStartProfit = gridProfit;
+      sliceIdx++;
+    }
+    const tradesBefore = trades;
     if (c.close >= c.open) {
       walk(c.open, c.low);
       walk(c.low, c.high);
@@ -141,6 +158,7 @@ export function simulateGrid(
       walk(c.high, c.low);
       walk(c.low, c.close);
     }
+    if (trades > tradesBefore) activeDaySet.add(Math.floor(c.time / DAY_MS));
     if (c.close < lower || c.close > upper) breakouts++;
     const equity = cash + coins * c.close;
     if (equity > peak) peak = equity;
@@ -153,6 +171,14 @@ export function simulateGrid(
   const days = (last - first + candleMs) / DAY_MS;
   const monthlyYield = days > 0 ? (gridProfit / investment / days) * 30 : 0;
   const equityEnd = cash + coins * candles[candles.length - 1].close;
+
+  // Close the trailing slice. Only slices covering ≥ 20 days count for the worst-slice yield,
+  // so a short tail (or a window under 20 days) never masquerades as a bad month.
+  sliceProfits.push(gridProfit - sliceStartProfit);
+  const lastSliceDays = (last - (firstTime + sliceIdx * SLICE_MS) + candleMs) / DAY_MS;
+  const fullSlices = sliceProfits.filter((_, i) => i < sliceProfits.length - 1 || lastSliceDays >= 20);
+  const worstSliceYield = fullSlices.length > 0 ? Math.min(...fullSlices) / investment : monthlyYield;
+  const activeDays = activeDaySet.size;
 
   return {
     gridProfit,
@@ -169,16 +195,26 @@ export function simulateGrid(
     levels: L,
     cashEnd: cash,
     coinsEnd: coins,
+    sliceProfits,
+    worstSliceYield,
+    activeDays,
+    idleDays: Math.max(0, Math.round(days) - activeDays),
   };
 }
 
 /* ---------- persisted tab settings (pure, shared by tab + tests) ---------- */
+
+export type RankBy = "worst" | "average";
 
 export interface GridSettings {
   goalUsd: number;
   maxInvestment: number | null;
   window: GridWindow;
   mode: GridMode;
+  /** "worst": rank and size on the worst 30-day slice (steady income); "average": on the mean yield. */
+  rankBy: RankBy;
+  /** Candidates completing fewer rounds per day on average are dropped (0 = no filter). */
+  minTradesPerDay: number;
 }
 
 export const DEFAULT_GRID_SETTINGS: GridSettings = {
@@ -186,6 +222,8 @@ export const DEFAULT_GRID_SETTINGS: GridSettings = {
   maxInvestment: null,
   window: "3m",
   mode: "arithmetic",
+  rankBy: "worst",
+  minTradesPerDay: 3,
 };
 
 export const isGridSettings = (v: unknown): v is GridSettings => {
@@ -195,7 +233,9 @@ export const isGridSettings = (v: unknown): v is GridSettings => {
     typeof o.goalUsd === "number" &&
     (o.maxInvestment === null || typeof o.maxInvestment === "number") &&
     ["1m", "3m", "6m", "max"].includes(o.window as string) &&
-    (o.mode === "arithmetic" || o.mode === "geometric")
+    (o.mode === "arithmetic" || o.mode === "geometric") &&
+    (o.rankBy === "worst" || o.rankBy === "average") &&
+    typeof o.minTradesPerDay === "number"
   );
 };
 
@@ -210,6 +250,8 @@ export interface OptimizeInput {
   mode: GridMode;
   /** Resolution correction (RESOLUTION_FACTOR); multiplies yield for sizing only. */
   factor: number;
+  rankBy: RankBy;
+  minTradesPerDay: number;
 }
 
 export interface Candidate {
@@ -220,7 +262,8 @@ export interface Candidate {
   result: GridResult; // simulated at NOMINAL_INVESTMENT
   spacingPct: number; // tightest interval, fraction
   profitPerGridPct: number; // spacingPct − 2 × fee
-  liveMonthlyYield: number; // result.monthlyYield × factor
+  rankYield: number; // raw yield used for ranking: worstSliceYield or monthlyYield per rankBy
+  liveMonthlyYield: number; // rankYield × factor
   requiredInvestment: number; // ceil(goal / liveMonthlyYield)
 }
 
@@ -258,7 +301,8 @@ function unique(xs: number[]): number[] {
 }
 
 export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
-  const { candles, candleMs, goalUsd, maxInvestment, currentPrice, mode } = input;
+  const { candles, candleMs, goalUsd, maxInvestment, currentPrice, mode, rankBy } = input;
+  const minTradesPerDay = input.minTradesPerDay > 0 ? input.minTradesPerDay : 0;
   const factor = input.factor > 0 ? input.factor : 1;
   const warnings: string[] = [];
   const none: OptimizeOutput = {
@@ -295,17 +339,21 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
         const result = simulateGrid(candles, { lower, upper, grids, investment: NOMINAL_INVESTMENT, mode }, candleMs);
         if (result.timeInRangePct < MIN_IN_RANGE_PCT || result.monthlyYield <= 0) continue;
         if (result.buys < MIN_BUY_SHARE * result.trades) continue; // trending: seed sells only
-        const liveMonthlyYield = result.monthlyYield * factor;
+        if (result.tradesPerMonth / 30 < minTradesPerDay) continue; // too few rounds to be steady income
+        const rankYield = rankBy === "worst" ? result.worstSliceYield : result.monthlyYield;
+        if (rankYield <= 0) continue;
+        const liveMonthlyYield = rankYield * factor;
         candidates.push({
           lower, upper, grids, mode, result, spacingPct,
           profitPerGridPct: spacingPct - 2 * GRID_FEE_RATE,
+          rankYield,
           liveMonthlyYield,
           requiredInvestment: Math.ceil(goalUsd / liveMonthlyYield),
         });
       }
     }
   }
-  candidates.sort((a, b) => b.result.monthlyYield - a.result.monthlyYield);
+  candidates.sort((a, b) => b.rankYield - a.rankYield);
 
   // Ranking on raw yield favours wide spacing, so the top of the list would be six near-identical
   // 10-grid ranges. The board is a comparison, so keep only the best range per grid count.
@@ -319,7 +367,9 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
 
   if (candidates.length === 0) {
     warnings.push(
-      `No grid configuration worked on this window: either price left every range for > ${100 - MIN_IN_RANGE_PCT}% of the time, or profit came only from selling the starting position on a rise — the market is trending, not ranging. Try another window or wait for a range.`,
+      minTradesPerDay > 0
+        ? `No grid configuration passed the filters on this window: price left every range for > ${100 - MIN_IN_RANGE_PCT}% of the time, profit came only from a trending rise, or nothing completed ${minTradesPerDay} rounds a day. Lower the minimum rounds per day or try another window.`
+        : `No grid configuration worked on this window: either price left every range for > ${100 - MIN_IN_RANGE_PCT}% of the time, or profit came only from selling the starting position on a rise — the market is trending, not ranging. Try another window or wait for a range.`,
     );
     return { ...none, tested };
   }

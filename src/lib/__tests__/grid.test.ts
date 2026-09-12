@@ -51,6 +51,26 @@ describe("simulateGrid", () => {
     expect(r.gridProfit + r.unrealizedPnl).toBeCloseTo(r.cashEnd + r.coinsEnd * mid - params.investment, 9);
     expect(r.days).toBeCloseTo(n, 9);
     expect(r.timeInRangePct).toBe(100);
+    // one pair every day → every day active; 20 days = one slice ≥ 20 days → worst slice = whole window
+    expect(r.activeDays).toBe(n);
+    expect(r.idleDays).toBe(0);
+    expect(r.sliceProfits).toHaveLength(1);
+    expect(r.worstSliceYield).toBeCloseTo(r.gridProfit / params.investment, 12);
+  });
+
+  it("splits profit into 30-day slices and reports the worst one", () => {
+    const mid = (L[3] + L[4]) / 2;
+    // 60 days: days 0-29 oscillate (1 pair/day), days 30-59 flat (0 pairs)
+    const candles: Candle[] = Array.from({ length: 60 }, (_, i) =>
+      i < 30 ? { time: i * DAY, open: mid, high: L[4], low: L[3], close: mid } : { time: i * DAY, open: mid, high: mid, low: mid, close: mid },
+    );
+    const r = simulateGrid(candles, params, DAY);
+    expect(r.sliceProfits).toHaveLength(2);
+    expect(r.sliceProfits[0]).toBeCloseTo(r.gridProfit, 9);
+    expect(r.sliceProfits[1]).toBe(0);
+    expect(r.worstSliceYield).toBe(0);
+    expect(r.activeDays).toBe(30);
+    expect(r.idleDays).toBe(30);
   });
 
   it("candles entirely above the range: no trades, zero time in range", () => {

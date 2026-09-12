@@ -1,7 +1,7 @@
 "use client";
 
 import { C } from "@/lib/constants";
-import type { Candidate } from "@/lib/grid";
+import type { Candidate, RankBy } from "@/lib/grid";
 
 export const fmtPrice = (n: number) => n.toFixed(5);
 export const fmtUsd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
@@ -13,6 +13,7 @@ interface CandidateBoardProps {
   onSelect: (i: number) => void;
   goalUsd: number;
   maxInvestment: number | null;
+  rankBy: RankBy;
   currentPrice: number | null;
   tested: number;
   kept: number;
@@ -31,8 +32,8 @@ function Bar({ fraction, color, marker }: { fraction: number; color: string; mar
   );
 }
 
-export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInvestment, currentPrice, tested, kept, loading, emptyMessage }: CandidateBoardProps) {
-  const topYield = candidates[0]?.result.monthlyYield ?? 1;
+export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInvestment, rankBy, currentPrice, tested, kept, loading, emptyMessage }: CandidateBoardProps) {
+  const topYield = candidates[0]?.rankYield ?? 1;
   const best = candidates[0];
   const budgetLine =
     best && maxInvestment != null && best.requiredInvestment > maxInvestment
@@ -44,7 +45,9 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
         <div>
           <h2 className="m-0 text-[12px] font-bold text-white">Candidates that reach {fmtUsd(goalUsd)} / month</h2>
           <p className="m-0 text-[10px]" style={{ color: C.muted }}>
-            {loading ? "Backtesting…" : `${tested.toLocaleString()} configurations tested, ${kept.toLocaleString()} kept price in range ≥ 90% of the window.`}
+            {loading
+              ? "Backtesting…"
+              : `${tested.toLocaleString()} configurations tested, ${kept.toLocaleString()} passed the filters · ranked by ${rankBy === "worst" ? "worst 30-day slice" : "average month"}.`}
           </p>
           {!loading && budgetLine && (
             <p className="m-0 mt-1 text-[11px]" style={{ color: C.yellow }}>
@@ -95,16 +98,25 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
                 <Bar fraction={1} color={`${C.blue}59`} marker={pos} />
               </span>
               <span className="whitespace-nowrap text-[10px]" style={{ color: C.muted }}>
-                Yield / mo
-                <b className="block text-[13px] text-white">{fmtPct(c.liveMonthlyYield * 100)}</b>
-                <Bar fraction={c.result.monthlyYield / topYield} color={C.green} />
+                {rankBy === "worst" ? "Worst month" : "Avg / mo"}
+                <b className="block text-[13px] text-white">
+                  {fmtPct(c.liveMonthlyYield * 100)}
+                  <span className="ml-1.5 text-[10px] font-normal" style={{ color: C.muted }}>
+                    {rankBy === "worst" ? `avg ${fmtPct(c.result.monthlyYield * 100)}` : `worst ${fmtPct(c.result.worstSliceYield * 100)}`}
+                  </span>
+                </b>
+                <Bar fraction={c.rankYield / topYield} color={C.green} />
               </span>
               <span className="text-center text-[10px]" style={{ color: C.muted }}>
                 Grids<b className="block text-[13px] text-white">{c.grids}</b>
               </span>
               <span className="text-[10px]" style={{ color: C.muted }}>
-                In range · DD
-                <b className="block text-[13px] text-white">{fmtPct(c.result.timeInRangePct, 0)} · −{fmtPct(c.result.maxDrawdownPct)}</b>
+                In range · DD · idle
+                <b className="block text-[13px] text-white">
+                  {fmtPct(c.result.timeInRangePct, 0)} · −{fmtPct(c.result.maxDrawdownPct)} ·{" "}
+                  <span style={{ color: c.result.idleDays > Math.round(c.result.days) / 4 ? C.yellow : "#fff" }}>{c.result.idleDays}d</span>
+                </b>
+                <span className="block text-[10px]" style={{ color: C.muted }}>{Math.round(c.result.tradesPerMonth / 30)} rounds / day</span>
               </span>
               <span className="col-span-3 text-left md:col-span-1 md:text-right">
                 {maxInvestment != null && c.requiredInvestment > maxInvestment ? (

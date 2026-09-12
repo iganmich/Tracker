@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { C } from "@/lib/constants";
 import { GRID_WINDOW_LABEL, type GridWindow } from "@/lib/candles";
-import { DEFAULT_GRID_SETTINGS, type GridMode, type GridSettings } from "@/lib/grid";
+import { DEFAULT_GRID_SETTINGS, type GridMode, type GridSettings, type RankBy } from "@/lib/grid";
 
 interface GridInputsProps {
   value: GridSettings;
@@ -11,18 +11,23 @@ interface GridInputsProps {
 }
 
 const WINDOWS: GridWindow[] = ["1m", "3m", "6m", "max"];
+const RANKS: { id: RankBy; label: string; title: string }[] = [
+  { id: "worst", label: "WORST MONTH", title: "Rank and size on the worst 30-day slice — steady income" },
+  { id: "average", label: "AVERAGE", title: "Rank and size on the average monthly yield" },
+];
 const MODES: { id: GridMode; label: string }[] = [
   { id: "arithmetic", label: "ARITH" },
   { id: "geometric", label: "GEO" },
 ];
 
-function Pill({ active, color, onClick, children, ariaLabel }: { active: boolean; color: string; onClick: () => void; children: ReactNode; ariaLabel?: string }) {
+function Pill({ active, color, onClick, children, ariaLabel, title }: { active: boolean; color: string; onClick: () => void; children: ReactNode; ariaLabel?: string; title?: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
       aria-label={ariaLabel}
+      title={title}
       className="min-h-[44px] flex-1 rounded-lg border text-[10px] font-bold tracking-[1px] transition-colors"
       style={{
         background: active ? `${color}1f` : "transparent",
@@ -39,7 +44,7 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
   const inputStyle = { background: "rgba(0,0,0,0.25)", borderColor: "rgba(255,255,255,0.14)", color: "#fff", fontFamily: C.font };
   return (
     <section
-      className="mb-3 grid grid-cols-1 gap-3 rounded-xl p-3.5 sm:grid-cols-2 lg:grid-cols-4"
+      className="mb-3 grid grid-cols-1 gap-3 rounded-xl p-3.5 sm:grid-cols-2 lg:grid-cols-6"
       style={{ background: C.surface, border: `1px solid ${C.border}` }}
       aria-label="Grid analyst inputs"
     >
@@ -82,6 +87,30 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
           ))}
         </div>
       </div>
+      <div className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }} role="group" aria-label="Rank by">
+        Rank by
+        <div className="flex gap-1">
+          {RANKS.map((r) => (
+            <Pill key={r.id} active={value.rankBy === r.id} color={C.blue} onClick={() => onChange({ ...value, rankBy: r.id })} title={r.title}>
+              {r.label}
+            </Pill>
+          ))}
+        </div>
+      </div>
+      <label className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }} title="Drop grids that complete fewer rounds per day on average (0 = no filter)">
+        Min rounds / day
+        <input
+          id="grid-min-trades"
+          type="number"
+          min={0}
+          step={1}
+          inputMode="numeric"
+          value={value.minTradesPerDay}
+          onChange={(e) => onChange({ ...value, minTradesPerDay: Math.max(0, Number(e.target.value) || 0) })}
+          className="min-h-[44px] rounded-lg border px-3 text-[14px] font-bold tabular-nums"
+          style={inputStyle}
+        />
+      </label>
       <div className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }} role="group" aria-label="Grid mode">
         Grid mode
         <div className="flex gap-1">
