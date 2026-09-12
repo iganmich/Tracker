@@ -17,7 +17,7 @@
 - **Network on this Mac:** IPv6 is broken; Node fetch and npm hang. Prefix every `npm install` and every Node script that fetches with `NODE_OPTIONS='--no-network-family-autoselection --dns-result-order=ipv4first'`. `npm run candles:ingest` already does this. `next dev` needs it too if the live Pionex fallback is exercised.
 - **Local DB:** container `mon-tracker-local-db-postgres-1`, `postgresql://mon:localdev@localhost:5460/mon`, table `mon_candles(exchange, symbol, resolution_sec, time, open, high, low, close, volume, turnover, ingested_at)`. Pionex rows: `exchange='pionex', symbol='MON_USDT_PERP'`, resolutions 60/300/900/1800/3600/14400/86400. `.env.local` already contains `MON_DATABASE_URL`.
 - **Dev server** may already be running on :3000 (started earlier from this repo). Check with `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/dashboard` before starting another.
-- **Commit style:** conventional commits, end the message with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- **Commit style:** conventional commits, end the message with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. **Execution note (2026-09-12):** implementer subagents run in parallel on disjoint files and do not commit; the lead stages the task's listed files and commits after review, using the commands in each task's commit step.
 - **Design tokens:** `C` in `src/lib/constants.ts` (`C.green`, `C.yellow`, `C.red`, `C.blue`, `C.purple`, `C.muted`, `C.surface`, `C.border`, `C.font`). Tailwind classes for layout; inline `style` with `C.*` for dynamic color. Touch targets `min-h-[44px]`. Tabular nums are global.
 - **Recharts rule (AGENTS.md):** in tooltips read `payload[0].payload`, never `payload[0].value`, because the `[lower, upper]` tuple of an `<Area>` lands in `.value`.
 
@@ -128,6 +128,7 @@ import {
   candlesFromPricePoints,
   downsample,
   expandCandles,
+  fetchCandles,
   resolutionForDays,
 } from "@/lib/candles";
 
@@ -162,6 +163,16 @@ describe("candles helpers", () => {
     expect(c).toEqual([
       { time: Date.UTC(2026, 0, 1), open: 0.02, high: 0.02, low: 0.02, close: 0.02 },
     ]);
+  });
+
+  it("fetchCandles rejects on a non-OK response and expands rows on success", async () => {
+    const g = globalThis as { fetch?: typeof fetch };
+    const original = g.fetch;
+    g.fetch = (async () => ({ ok: false, status: 502 })) as unknown as typeof fetch;
+    await expect(fetchCandles(30)).rejects.toThrow("candles 502");
+    g.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ resolutionSec: 300, source: "db", candles: [[1, 2, 3, 0.5, 2.5]] }) })) as unknown as typeof fetch;
+    await expect(fetchCandles(30)).resolves.toEqual({ resolutionSec: 300, source: "db", candles: [{ time: 1, open: 2, high: 3, low: 0.5, close: 2.5 }] });
+    g.fetch = original;
   });
 
   it("downsamples to at most n points keeping first and last", () => {
@@ -359,6 +370,7 @@ describe("simulateGrid", () => {
     const coins3 = q / L[3];
     const fee = GRID_FEE_RATE;
     expect(r.trades).toBe(n);
+    expect(r.buys).toBe(n - 1); // day 1 sells the seed; every later pair starts with a grid buy
     expect(r.gridProfit).toBeCloseTo(n * (coins3 * (L[4] - L[3]) - fee * coins3 * (L[3] + L[4])), 9);
     // hand-derived end state (spec section 7): interval 3 ends holding a buy.
     const coinsEnd = [4, 5, 6, 7, 8, 9].reduce((s, k) => s + q / L[k], 0);
@@ -456,6 +468,7 @@ export interface GridResult {
   monthlyYield: number; // gridProfit / investment / days * 30
   monthlyProfit: number; // monthlyYield * investment
   trades: number; // completed pairs (every sell fill)
+  buys: number; // grid buy fills (seed buys at start are not counted)
   tradesPerMonth: number;
   timeInRangePct: number; // 0..100, candles whose close is inside [lower, upper]
   maxDrawdownPct: number; // 0..100, worst peak-to-trough of equity over closes
@@ -495,7 +508,7 @@ export function minSpacingPct(lower: number, upper: number, grids: number, mode:
 
 function emptyResult(levels: number[]): GridResult {
   return {
-    gridProfit: 0, monthlyYield: 0, monthlyProfit: 0, trades: 0, tradesPerMonth: 0,
+    gridProfit: 0, monthlyYield: 0, monthlyProfit: 0, trades: 0, buys: 0, tradesPerMonth: 0,
     timeInRangePct: 0, maxDrawdownPct: 0, unrealizedPnl: 0, breakouts: 0, days: 0,
     levels, cashEnd: 0, coinsEnd: 0,
   };
@@ -526,6 +539,7 @@ export function simulateGrid(
   let coins = 0;
   let gridProfit = 0;
   let trades = 0;
+  let buys = 0;
 
   // Seed at the first open: intervals whose upper bound is above p0 start as sells.
   const p0 = candles[0].open;
@@ -548,6 +562,7 @@ export function simulateGrid(
         if (lv < b) break;
         cash -= q * (1 + feeRate);
         coins += coinsPer[k];
+        buys++;
         isSell[k] = 1;
       }
     } else if (b > a) {
@@ -597,6 +612,7 @@ export function simulateGrid(
     monthlyYield,
     monthlyProfit: monthlyYield * investment,
     trades,
+    buys,
     tradesPerMonth: days > 0 ? (trades / days) * 30 : 0,
     timeInRangePct: (100 * (candles.length - breakouts)) / candles.length,
     maxDrawdownPct: maxDD * 100,
@@ -815,6 +831,8 @@ const LOWER_PCTS = [0, 2.5, 5, 10, 15];
 const UPPER_PCTS = [85, 90, 95, 97.5, 100];
 const GRID_COUNTS = [10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 120, 150];
 const MIN_IN_RANGE_PCT = 90;
+/** Pairs must be earned by grid buys, not just by unwinding the seed on a rise (that is trend profit). */
+const MIN_BUY_SHARE = 0.5;
 const MIN_SPACING = 6 * GRID_FEE_RATE; // 0.3 %: three round-trip fees of headroom
 const EDGE_WARN = 0.05;
 
@@ -863,6 +881,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
         tested++;
         const result = simulateGrid(candles, { lower, upper, grids, investment: NOMINAL_INVESTMENT, mode }, candleMs);
         if (result.timeInRangePct < MIN_IN_RANGE_PCT || result.monthlyYield <= 0) continue;
+        if (result.buys < MIN_BUY_SHARE * result.trades) continue; // trending: seed sells only
         const liveMonthlyYield = result.monthlyYield * factor;
         candidates.push({
           lower, upper, grids, mode, result, spacingPct,
@@ -877,7 +896,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
 
   if (candidates.length === 0) {
     warnings.push(
-      `No grid kept the price inside its range for ≥ ${MIN_IN_RANGE_PCT}% of this window — the market is trending. Try a different window or wait for a range.`,
+      `No grid configuration worked on this window: either price left every range for > ${100 - MIN_IN_RANGE_PCT}% of the time, or profit came only from selling the starting position on a rise — the market is trending, not ranging. Try another window or wait for a range.`,
     );
     return { ...none, tested };
   }
@@ -915,7 +934,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
 - [ ] **Step 4: Run all tests**
 
 Run: `npm test`
-Expected: all pass. The ranging-market test must find a candidate; if it does not, print `out.warnings` and `out.tested` and check the synthetic data before touching the search space.
+Expected: all pass. The ranging-market test must find a candidate and the trending test must return `best === null` (the plan reviewer executed this exact code against these exact tests on 2026-09-12: ranging passes; trending passes only because of the `MIN_BUY_SHARE` filter — a monotone rise fills the seeded sells and books a positive yield with zero grid buys). If either fails, print `out.warnings`, `out.tested`, `out.kept` and report; do not loosen the tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1277,14 +1296,19 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
 Run: `npx tsc --noEmit && npm run lint`
 Expected: clean for your files.
 
-- [ ] **Step 5: Commit (stage exactly these files; for `types.ts` use `git add -p` and accept only the TabId hunk)**
+- [ ] **Step 5: Commit (stage exactly these files; `types.ts` is staged at blob level so the user's other hunk stays out)**
+
+`git add -p` is interactive and unavailable here. Stage only the TabId change by building the committed content from HEAD:
 
 ```bash
 git add src/lib/constants.ts src/app/dashboard/page.tsx src/components/grid/GridInputs.tsx src/components/tabs/GridAnalystTab.tsx
-git add -p src/lib/types.ts   # accept ONLY the TabId hunk
+git show HEAD:src/lib/types.ts | sed 's/export type TabId = "unlock" | "cycles" | "levels" | "backtest";/export type TabId = "unlock" | "cycles" | "levels" | "backtest" | "grid";/' > /tmp/types-staged.ts
+git update-index --cacheinfo 100644,$(git hash-object -w /tmp/types-staged.ts),src/lib/types.ts
+git diff --cached src/lib/types.ts   # must show exactly one changed line (TabId)
 git commit -m "feat(ui): register Grid Analyst tab and inputs card
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+git diff src/lib/types.ts            # the user's bb* hunk must still be in the working tree
 ```
 
 ---
@@ -1830,7 +1854,7 @@ In "What this is": four tabs → five tabs, add "Grid Analyst". In Architecture 
 - **Grid Analyst** — `src/lib/grid.ts` is pure (simulator + optimizer, tested against the user's live Pionex bot: `src/lib/__tests__/fixtures/`). Candles come from `/api/candles?days=N` ([src/app/api/candles/route.ts](src/app/api/candles/route.ts)): Postgres when `MON_DATABASE_URL` is set, else Pionex live pagination; resolution is chosen by window (5-min ≤ 30 d, 15-min ≤ 90 d, 30-min ≤ 180 d, else 1-hour) and `RESOLUTION_FACTOR` in `src/lib/candles.ts` corrects coarser resolutions for sizing. The tab caches one `CandleSet` per window in a `useRef` map. Settings persist under `mon.grid`.
 ```
 
-In "Data shape" add `Candle`, `GridWindow`, `GridSettings`, `Candidate`. In "Don't" add: "Don't change the fill model in `simulateGrid` without updating the calibration fixtures' expected values *and* explaining why in the commit — the two calibration tests pin the model to the live bot." Under Persistence in README add `mon.grid`. Add `npm test` to the README Running Locally block.
+In "Data shape" add `Candle`, `GridWindow`, `GridSettings`, `Candidate`. In "Don't" add: "Don't change the fill model in `simulateGrid` without updating the calibration fixtures' expected values *and* explaining why in the commit — the two calibration tests pin the model to the live bot." Under Persistence in README add `mon.grid`. Add `npm test` to the README Running Locally block. Also fix the existing AGENTS.md line "server routes fall back to live KuCoin fetches" → "live Pionex fetches" (the route pages Pionex, not KuCoin).
 
 - [ ] **Step 2: Final gate**
 

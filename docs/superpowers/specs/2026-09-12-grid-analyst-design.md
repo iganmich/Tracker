@@ -85,6 +85,7 @@ export interface GridResult {
   monthlyYield: number;      // gridProfit / investment / days * 30
   monthlyProfit: number;     // monthlyYield * investment
   trades: number;            // completed pairs (every sell fill = one pair)
+  buys: number;              // grid buy fills (seed buys are not counted)
   tradesPerMonth: number;
   timeInRangePct: number;    // 0..100, share of candles whose close is within [lower, upper] (candle-count based, resolution-agnostic)
   maxDrawdownPct: number;    // worst peak-to-trough of equity (cash + coins*close) over candle closes, as % of peak, 0..100
@@ -147,7 +148,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput;
 - `grids` ∈ `{10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 120, 150}`.
 - `spacingPct` for a candidate is the **minimum** interval spacing, `(L[grids] − L[grids−1]) / L[grids−1]` for arithmetic (top interval is the tightest), constant for geometric. `profitPerGridPct = spacingPct − 2 × fee`.
 - Constraints (Pionex spot grid): `spacingPct ≥ 3 × 2 × fee` (= 0.3%) so each pair nets profit; per-grid budget at nominal investment must be ≥ `MIN_ORDER_USDT` (5). Nominal investment = 1000 for simulation; yield is linear in investment so one run per (lower, upper, grids).
-- Filter: `timeInRangePct ≥ 90` **and** `monthlyYield > 0` (a flat or bleeding window can produce zero pairs; never divide by a non-positive yield).
+- Filter: `timeInRangePct ≥ 90` **and** `monthlyYield > 0` (a flat or bleeding window can produce zero pairs; never divide by a non-positive yield) **and** `buys ≥ 0.5 × trades` — in a monotone rise the seeded sells fill one after another and book a positive yield with no grid buy at all; that is trend profit, not grid profit, and such windows must yield no candidate.
 - Rank by `monthlyYield` desc (raw). Best = first. Alternatives = next 5.
 - `requiredInvestment = ceil(goalUsd / (monthlyYield × factor))` where `factor = RESOLUTION_FACTOR[resolutionSec]` is passed in `OptimizeInput.factor` (default 1). `Candidate` also carries `liveMonthlyYield = monthlyYield × factor` for display.
 - Cost: ≈ 25 ranges × 12 grid counts = 300 simulations × up to 52k candles × 3 segments ≈ 50 M segment steps worst case (6M window). Each step is a couple of comparisons unless a level is crossed, so this stays around 1 s in JS. Run it inside `useMemo`; if it measurably janks, move to a Web Worker (noted, not planned).
@@ -213,7 +214,7 @@ Add **vitest** (devDependency, `npm test` script, `vitest.config.ts` with `@` al
 - With `maxInvestment` below required: `overBudget === true`, `achievableMonthly === maxInvestment × monthlyYield`.
 - Strongly trending synthetic data: `best === null` and a warning is present.
 
-**Route** — no unit test; verified manually with curl: with `MON_DATABASE_URL` set, `/api/candles?days=90` returns `source: "db"`, ascending, `resolutionSec: 300`; `days=400` returns `resolutionSec: 900`; with the variable unset, `source: "live"`; bad `days` → 400.
+**Route** — no unit test; verified manually with curl: with `MON_DATABASE_URL` set, `/api/candles?days=30` returns `source: "db"`, ascending, `resolutionSec: 300`; `days=90` → 900; `days=180` → 1800; `days=400` → 3600; with the variable unset, `source: "live"`; bad `days` → 400.
 
 **Ingest** — `scripts/ingest-candles.mts` is verified by running it and checking row counts and first/last timestamps per resolution against KuCoin (done 2026-09-12); a second run must upsert only the tail.
 
