@@ -105,6 +105,35 @@ describe("simulateGrid", () => {
     expect(r.unrealizedPnl).toBeCloseTo(0, 9);
   });
 
+  it("stop loss: sells everything when the low touches the stop, then re-enters when price closes back in range", () => {
+    const mid = (L[3] + L[4]) / 2;
+    const osc = (i: number): Candle => ({ time: i * DAY, open: mid, high: L[4], low: L[3], close: mid });
+    const stop = L[0] * 0.98;
+    const candles: Candle[] = [
+      ...Array.from({ length: 5 }, (_, i) => osc(i)),
+      { time: 5 * DAY, open: mid, high: mid, low: stop * 0.99, close: stop * 0.995 }, // crash through the stop
+      { time: 6 * DAY, open: stop, high: stop, low: stop * 0.98, close: stop * 0.99 }, // still below: halted
+      { time: 7 * DAY, open: L[1], high: L[2], low: L[1], close: L[2] }, // back inside: re-enter at close
+      ...Array.from({ length: 5 }, (_, i) => osc(8 + i)),
+    ];
+    const withStop = simulateGrid(candles, params, DAY, GRID_FEE_RATE, { price: stop, reenter: true });
+    const noStop = simulateGrid(candles, params, DAY);
+    expect(withStop.exits).toHaveLength(1);
+    expect(withStop.exits[0].time).toBe(5 * DAY);
+    expect(withStop.exits[0].price).toBe(stop);
+    expect(withStop.exits[0].lossFromEntry).toBeGreaterThan(0);
+    expect(withStop.daysOut).toBeCloseTo(2, 9); // days 6 and 7 halted (re-entry happens at the close of day 7)
+    expect(withStop.trades).toBeGreaterThan(5); // trades resumed after re-entry
+    expect(withStop.trades).toBeLessThan(noStop.trades + 20);
+    expect(withStop.coinsEnd).toBeGreaterThan(0); // re-seeded position
+    expect(withStop.totalPnl).toBeCloseTo(withStop.cashEnd + withStop.coinsEnd * mid - params.investment, 9);
+    expect(noStop.exits).toHaveLength(0);
+    expect(noStop.daysOut).toBe(0);
+    const noReenter = simulateGrid(candles, params, DAY, GRID_FEE_RATE, { price: stop, reenter: false });
+    expect(noReenter.coinsEnd).toBe(0);
+    expect(noReenter.trades).toBe(5);
+  });
+
   it("empty input returns zeros", () => {
     const r = simulateGrid([], params, DAY);
     expect(r.trades).toBe(0);

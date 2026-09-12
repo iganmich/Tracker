@@ -119,12 +119,15 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
                 <span className="block text-[10px]" style={{ color: C.muted }}>{Math.round(c.result.tradesPerMonth / 30)} rounds / day</span>
               </span>
               <span className="text-[10px]" style={{ color: C.muted }}>
-                Stop loss · max loss
+                Stop loss ({fmtPct(c.stopMargin * 100, 0)} below)
                 <b className="block text-[13px] text-white">
-                  {fmtPrice(c.stopLoss)} · <span style={{ color: C.red }}>−{fmtPct(c.stopLossPct * 100, 0)}</span>
+                  {fmtPrice(c.stopLoss)} · <span style={{ color: C.red }}>worst −{fmtPct(c.stopLossPct * 100, 0)}</span>
                 </b>
-                <span className="block text-[10px]" style={{ color: c.stopHits > 0 ? C.yellow : C.muted }}>
-                  {c.stopHits > 0 ? `touched ${c.stopHits}× in window` : "never touched in window"}
+                <span className="block text-[10px]" style={{ color: c.stopExits > 0 ? C.yellow : C.muted }}>
+                  {c.stopExits > 0 ? `fired ${c.stopExits}× in window · ` : "never fired in window · "}
+                  <span style={{ color: c.stopPnlDeltaPct >= 0 ? C.green : C.red }}>
+                    {c.stopPnlDeltaPct >= 0 ? "+" : ""}{fmtPct(c.stopPnlDeltaPct * 100)} vs no stop
+                  </span>
                 </span>
               </span>
               <span className="col-span-3 text-left md:col-span-1 md:text-right">

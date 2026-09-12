@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candle } from "@/lib/candles";
-import { GRID_COUNTS, MIN_ORDER_USDT, STOP_MARGIN, optimizeGrid, stopLossFor } from "@/lib/grid";
+import { GRID_COUNTS, MIN_ORDER_USDT, STOP_MARGINS, optimizeGrid, pickStop, stopSweep, worstCaseLossPct } from "@/lib/grid";
 
 const H = 3_600_000;
 
@@ -106,18 +106,26 @@ describe("optimizeGrid", () => {
     expect(busy.kept).toBeLessThanOrEqual(worst.kept);
   });
 
-  it("suggests a stop loss below the lower bound with the worst-case loss", () => {
+  it("sweeps stop-loss margins and recommends the one that kept the most P&L", () => {
     const candles = ranging();
     const currentPrice = candles[candles.length - 1].close;
     const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
     const b = out.best!;
-    expect(b.stopLoss).toBeCloseTo(b.lower * (1 - STOP_MARGIN), 12);
-    expect(b.stopLossPct).toBeGreaterThan(STOP_MARGIN); // at least the margin below the lowest level
+    expect(b.stopSweep).toHaveLength(STOP_MARGINS.length + 1);
+    expect(b.stopSweep[0].margin).toBeNull();
+    expect(b.stopLoss).toBeCloseTo(b.lower * (1 - b.stopMargin), 12);
+    expect(STOP_MARGINS).toContain(b.stopMargin);
+    expect(b.stopLossPct).toBeCloseTo(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, b.stopLoss), 12);
+    expect(b.stopLossPct).toBeGreaterThan(0);
     expect(b.stopLossPct).toBeLessThan(0.5);
-    expect(b.stopHits).toBe(candles.filter((c) => c.low <= b.stopLoss).length);
-    // flat levels: stop 5% below a single-level grid loses exactly 5%
-    const flat = stopLossFor(1, 1.000001, 1, "arithmetic", []);
-    expect(flat.stopLossPct).toBeCloseTo(0.05, 9);
+    const pick = pickStop(b.stopSweep);
+    expect(b.stopExits).toBe(pick.exits);
+    expect(b.stopPnlDeltaPct).toBeCloseTo(pick.pnlPct - b.stopSweep[0].pnlPct, 12);
+    for (const a of out.alternatives) expect(a.stopSweep.length).toBeGreaterThan(0);
+    // a stop the price never reaches changes nothing
+    const far = stopSweep(candles, { lower: b.lower, upper: b.upper, grids: b.grids, mode: b.mode }, H, [0.9]);
+    expect(far[1].exits).toBe(0);
+    expect(far[1].pnlPct).toBeCloseTo(far[0].pnlPct, 12);
   });
 
   it("handles empty candles", () => {

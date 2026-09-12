@@ -48,11 +48,45 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
         <Field label="Grid count" unit={candidate?.mode} value={candidate ? String(candidate.grids) : "—"} sub={candidate ? `${fmtPct(candidate.spacingPct * 100, 2)} / grid` : undefined} />
         <Field
           label="Stop loss"
-          unit="USDT"
+          unit={candidate ? `${fmtPct(candidate.stopMargin * 100, 0)} below lower` : "USDT"}
           value={candidate ? fmtPrice(candidate.stopLoss) : "—"}
-          sub={candidate && investment != null ? `max −${fmtPct(candidate.stopLossPct * 100, 0)} ≈ ${fmtUsd(investment * candidate.stopLossPct)}` : undefined}
+          sub={candidate && investment != null ? `worst −${fmtPct(candidate.stopLossPct * 100, 0)} ≈ ${fmtUsd(investment * candidate.stopLossPct)}` : undefined}
         />
       </div>
+
+      {candidate && investment != null && candidate.stopSweep.length > 0 && (
+        <div className="mt-3 overflow-x-auto">
+          <p className="m-0 mb-1 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }}>
+            Stop-loss backtest for this grid · exits when a candle low touches the stop, re-enters when price closes back inside the range · figures over the whole window at {fmtUsd(investment)}
+          </p>
+          <table className="w-full border-collapse text-[11px] tabular-nums">
+            <thead>
+              <tr>
+                {["Stop", "Price", "Exits", "Worst exit", "Days out", "Grid profit", "Net P&L", ""].map((h, i) => (
+                  <th key={h || i} className={`py-1 pr-3 text-[9px] font-normal uppercase tracking-[1px] ${i >= 2 ? "text-right" : "text-left"}`} style={{ color: C.muted, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {candidate.stopSweep.map((r) => {
+                const chosen = r.margin === candidate.stopMargin;
+                return (
+                  <tr key={r.margin ?? "none"} style={{ background: chosen ? `${C.green}12` : undefined, color: chosen ? "#fff" : C.text }}>
+                    <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.margin === null ? "none" : `${fmtPct(r.margin * 100, 0)} below`}</td>
+                    <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.stopPrice === null ? "—" : fmtPrice(r.stopPrice)}</td>
+                    <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.exits}</td>
+                    <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: r.worstExitLossPct > 0 ? C.red : undefined }}>{r.worstExitLossPct > 0 ? `−${fmtPct(r.worstExitLossPct * 100)} · ${fmtUsd(investment * r.worstExitLossPct)}` : "—"}</td>
+                    <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.daysOut > 0 ? r.daysOut.toFixed(1) : "—"}</td>
+                    <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{fmtUsd(investment * r.gridProfitPct)}</td>
+                    <td className="py-1 pr-3 text-right font-bold" style={{ borderBottom: `1px solid ${C.border}`, color: r.pnlPct >= 0 ? C.green : C.red }}>{r.pnlPct >= 0 ? "+" : "−"}{fmtUsd(Math.abs(investment * r.pnlPct))}</td>
+                    <td className="py-1 text-right text-[10px]" style={{ borderBottom: `1px solid ${C.border}`, color: C.green }}>{chosen ? "recommended" : ""}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {candidate && sized && (
         <p className="m-0 mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: C.muted }}>
