@@ -32,15 +32,20 @@ Add a fifth dashboard tab, **⚡ Grid Analyst**, that turns a monthly USD profit
 
 ## Architecture
 
-### 1. Server route — `src/app/api/candles/route.ts`
+### 1. Candle storage and server route
+
+**Local history store (built 2026-09-12, before the tab).** MON-tracker has its own Docker Postgres stack at `infra/local-db/` (`mon-tracker-local-db`, `postgres:17-alpine`, host port 5460, user/db `mon`, password `localdev`, own volume). It follows the AIMS repos' local-db pattern but is a separate stack so no sibling repo's `db:local:reset` can touch it, and it never connects to Neon. Table `mon_candles (exchange, symbol, resolution_sec, time, open, high, low, close, volume, turnover, ingested_at)` with PK `(exchange, symbol, resolution_sec, time)`. `npm run candles:ingest` (`scripts/ingest-candles.mts`, plain `pg`) pulls KuCoin `MON-USDT` at 1min/5min/15min/1hour/1day from launch and upserts; it is incremental (resumes from the last stored candle, re-pulling that one because it may have been partial) and refuses non-localhost hosts. `npm run db:local:up|down|psql` manage the container. `MON_DATABASE_URL` in `.env.local` points the app at it.
+
+**Route — `src/app/api/candles/route.ts`**
 
 - `GET /api/candles?days=<1..400>`
-- Resolution rule (server-side, not a query param): `days ≤ 180 → 5min`, else `15min`.
-- Proxies KuCoin `market/candles` for `MON-USDT` (symbol and host are server constants; no open proxy). Pages backwards from `now` in `1500 × candleSeconds` windows via `startAt`/`endAt`, sequentially (KuCoin public weight limit is generous but keep it polite), stopping at `MON_LAUNCH_S = 1763967600` (2025-11-24 15:00 UTC) or when a page comes back empty. 3M ≈ 18 requests, 6M ≈ 35, Max (15min) ≈ 19.
-- Parses each row `[time_s, open, high, low, close, volume, turnover]` with `Number`, drops rows with any non-finite field, sorts ascending by time, de-duplicates on time.
-- Response `{ resolutionSec: number, candles: number[][] }` where each candle is `[timeMs, open, high, low, close]` (compact array, no volume — halves the payload; 52k candles ≈ 2.5 MB raw, ≈ 500 KB gzipped).
-- In-memory module cache keyed by `days` with 5-min TTL, plus `Cache-Control: public, max-age=300`. A cache miss for Max can take several seconds; the tab shows the chart skeleton meanwhile.
-- Validation: `days` must be an integer 1..400 → otherwise 400. Upstream failure or `code !== "200000"` → 502 `{ error }`.
+- Resolution rule (server-side, not a query param): `days ≤ 180 → 300 s`, else `900 s`.
+- **Source A (preferred): Postgres.** When `MON_DATABASE_URL` is set, query `mon_candles` for `exchange='kucoin', symbol='MON-USDT', resolution_sec=<rule>` and `time ≥ now − days`, ordered ascending. One query, ~50k rows worst case, ≈ 50 ms locally. A module-level `pg.Pool` (max 3) is created lazily on first request.
+- **Source B (fallback): live KuCoin proxy.** When `MON_DATABASE_URL` is unset (Coolify today) or the query throws, page KuCoin `market/candles` backwards from `now` in `1500 × candleSeconds` windows via `startAt`/`endAt`, sequentially, stopping at `MON_LAUNCH_S = 1763967600` (2025-11-24 15:00 UTC) or an empty page. 3M ≈ 18 requests, 6M ≈ 35, Max (15min) ≈ 19. Parse rows `[time_s, open, close, high, low, volume, turnover]` (note KuCoin's o-c-h-l order) with `Number`, drop non-finite rows, sort ascending, de-duplicate on time.
+- Response `{ resolutionSec: number, source: "db" | "live", candles: number[][] }`, each candle `[timeMs, open, high, low, close]` (compact array; 52k candles ≈ 2.5 MB raw, ≈ 500 KB gzipped). `source` is shown in the tab footer.
+- In-memory module cache keyed by `days` with 5-min TTL, plus `Cache-Control: public, max-age=300`.
+- Validation: `days` must be an integer 1..400 → otherwise 400. Both sources failing → 502 `{ error }`.
+- The dashboard's existing "don't add a database" rule in AGENTS.md is amended: the database is optional, local-first, holds only public market data, and the app must keep working without it.
 
 ### 2. Client data — `src/lib/candles.ts`
 
@@ -55,7 +60,7 @@ export function candlesFromPricePoints(points: PricePoint[]): Candle[]; // fallb
 ```
 
 - The tab fetches **per window** on demand (`GRID_WINDOW_DAYS[window]`) because 5m-vs-15m resolution differs by window, and caches each result in a `useRef` map for the session (same pattern as CyclesTab's timeframe cache). Switching back to a seen window does not refetch.
-- `resolutionSec` is displayed in the footer ("5-minute candles") and passed to `simulateGrid` so `days` is computed correctly.
+- `resolutionSec` and `source` are displayed in the footer ("5-minute candles · local db") and `resolutionSec` is passed to `simulateGrid` so `days` is computed correctly.
 
 ### 3. Simulator — `src/lib/grid.ts` (pure, no React)
 
@@ -169,7 +174,7 @@ Computation: `useMemo(() => optimizeGrid(...), [windowCandles, goalUsd, maxInves
 - `types.ts`: `TabId` adds `"grid"`; `Candle`/`GridWindow` live in `candles.ts`, grid types in `grid.ts`.
 - `constants.ts`: `TABS` adds `{ id: "grid", label: "⚡ Grid Analyst" }` after backtest.
 - `dashboard/page.tsx`: `TAB_IDS` adds `"grid"`; renders `<GridAnalystTab priceData={priceData} currentPrice={currentPrice} />`.
-- AGENTS.md / README: add tab description, `/api/candles` route, `mon.grid` storage key, data-source note (KuCoin spot candles; Pionex API has no MON spot pair).
+- AGENTS.md / README: add tab description, `/api/candles` route, `mon.grid` storage key, the local-db stack and ingest commands, `MON_DATABASE_URL`, and the data-source note (KuCoin spot candles; Pionex API has no MON spot pair). Amend the "Don't add a database" rule as described in section 1.
 
 ### 7. Testing
 
@@ -194,7 +199,9 @@ Add **vitest** (devDependency, `npm test` script, `vitest.config.ts` with `@` al
 - With `maxInvestment` below required: `overBudget === true`, `achievableMonthly === maxInvestment × monthlyYield`.
 - Strongly trending synthetic data: `best === null` and a warning is present.
 
-**Route** — no unit test; verified manually with curl (`/api/candles?days=90` returns ascending 5-minute candles with `resolutionSec: 300`, `days=400` returns `resolutionSec: 900`, bad `days` → 400).
+**Route** — no unit test; verified manually with curl: with `MON_DATABASE_URL` set, `/api/candles?days=90` returns `source: "db"`, ascending, `resolutionSec: 300`; `days=400` returns `resolutionSec: 900`; with the variable unset, `source: "live"`; bad `days` → 400.
+
+**Ingest** — `scripts/ingest-candles.mts` is verified by running it and checking row counts and first/last timestamps per resolution against KuCoin (done 2026-09-12); a second run must upsert only the tail.
 
 ## Out of scope (v1)
 
