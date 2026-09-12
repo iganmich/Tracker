@@ -118,7 +118,7 @@ export interface BuySignalScore {
   proximityPct: number;
 }
 
-export type TabId = "unlock" | "cycles" | "levels" | "backtest";
+export type TabId = "unlock" | "cycles" | "levels" | "backtest" | "grid";
 
 export interface TabDef {
   id: TabId;

@@ -16,6 +16,7 @@ export const TABS: TabDef[] = [
   { id: "cycles", label: "📈 Investment Cycles" },
   { id: "levels", label: "🎯 Support & Resistance" },
   { id: "backtest", label: "🔬 Backtest" },
+  { id: "grid", label: "⚡ Grid Analyst" },
 ];
 
 export const C = {

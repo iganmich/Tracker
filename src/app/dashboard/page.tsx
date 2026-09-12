@@ -5,6 +5,7 @@ import { DashboardHeader } from "@/components/DashboardHeader";
 import { TabBar } from "@/components/TabBar";
 import { BacktestTab } from "@/components/tabs/BacktestTab";
 import { CyclesTab } from "@/components/tabs/CyclesTab";
+import { GridAnalystTab } from "@/components/tabs/GridAnalystTab";
 import { LevelsTab } from "@/components/tabs/LevelsTab";
 import { UnlockTab } from "@/components/tabs/UnlockTab";
 import { C } from "@/lib/constants";
@@ -21,7 +22,7 @@ import {
   type TabId,
 } from "@/lib/types";
 
-const TAB_IDS: readonly TabId[] = ["unlock", "cycles", "levels", "backtest"];
+const TAB_IDS: readonly TabId[] = ["unlock", "cycles", "levels", "backtest", "grid"];
 
 const isTabId = (v: unknown): v is TabId =>
   typeof v === "string" && (TAB_IDS as readonly string[]).includes(v);
@@ -106,6 +107,9 @@ export default function DashboardPage() {
       )}
       {activeTab === "backtest" && (
         <BacktestTab priceData={priceData} thresholds={thresholds} />
+      )}
+      {activeTab === "grid" && (
+        <GridAnalystTab priceData={priceData} currentPrice={currentPrice} />
       )}
 
       <p
