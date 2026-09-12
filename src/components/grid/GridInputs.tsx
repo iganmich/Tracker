@@ -32,7 +32,7 @@ function Pill({ active, color, onClick, children, ariaLabel, title }: { active: 
       style={{
         background: active ? `${color}1f` : "transparent",
         borderColor: active ? `${color}80` : C.border,
-        color: active ? color : C.muted,
+        color: active ? color : C.dim,
       }}
     >
       {children}
@@ -48,36 +48,37 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
       style={{ background: C.surface, border: `1px solid ${C.border}` }}
       aria-label="Grid analyst inputs"
     >
-      <label className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }}>
-        Monthly goal (USD)
+      <label className="flex flex-col gap-1.5 text-[11px] uppercase tracking-[1px]" style={{ color: C.dim }}>
+        Monthly goal (USD, optional)
         <input
           id="grid-goal"
           type="number"
           min={1}
           step={10}
           inputMode="decimal"
-          value={value.goalUsd}
-          onChange={(e) => onChange({ ...value, goalUsd: Math.max(0, Number(e.target.value) || 0) })}
+          placeholder="empty = show earnings"
+          value={value.goalUsd ?? ""}
+          onChange={(e) => onChange({ ...value, goalUsd: e.target.value === "" ? null : Math.max(0, Number(e.target.value) || 0) })}
           className="min-h-[44px] rounded-lg border px-3 text-[14px] font-bold tabular-nums"
           style={inputStyle}
         />
       </label>
-      <label className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }}>
-        Max investment (USD, optional)
+      <label className="flex flex-col gap-1.5 text-[11px] uppercase tracking-[1px]" style={{ color: C.dim }}>
+        {value.goalUsd === null ? "Investment (USD)" : "Max investment (USD, optional)"}
         <input
           id="grid-max"
           type="number"
           min={0}
           step={100}
           inputMode="decimal"
-          placeholder="no limit"
+          placeholder={value.goalUsd === null ? "enter an amount" : "no limit"}
           value={value.maxInvestment ?? ""}
           onChange={(e) => onChange({ ...value, maxInvestment: e.target.value === "" ? null : Math.max(0, Number(e.target.value) || 0) })}
           className="min-h-[44px] rounded-lg border px-3 text-[14px] font-bold tabular-nums"
           style={inputStyle}
         />
       </label>
-      <div className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }} role="group" aria-label="Backtest window">
+      <div className="flex flex-col gap-1.5 text-[11px] uppercase tracking-[1px]" style={{ color: C.dim }} role="group" aria-label="Backtest window">
         Backtest window
         <div className="flex gap-1">
           {WINDOWS.map((w) => (
@@ -87,7 +88,7 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
           ))}
         </div>
       </div>
-      <div className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }} role="group" aria-label="Rank by">
+      <div className="flex flex-col gap-1.5 text-[11px] uppercase tracking-[1px]" style={{ color: C.dim }} role="group" aria-label="Rank by">
         Rank by
         <div className="flex gap-1">
           {RANKS.map((r) => (
@@ -97,7 +98,7 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
           ))}
         </div>
       </div>
-      <label className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }} title="Drop grids that complete fewer rounds per day on average (0 = no filter)">
+      <label className="flex flex-col gap-1.5 text-[11px] uppercase tracking-[1px]" style={{ color: C.dim }} title="Drop grids that complete fewer rounds per day on average (0 = no filter)">
         Min rounds / day
         <input
           id="grid-min-trades"
@@ -111,7 +112,7 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
           style={inputStyle}
         />
       </label>
-      <div className="flex flex-col gap-1.5 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }} role="group" aria-label="Grid mode">
+      <div className="flex flex-col gap-1.5 text-[11px] uppercase tracking-[1px]" style={{ color: C.dim }} role="group" aria-label="Grid mode">
         Grid mode
         <div className="flex gap-1">
           {MODES.map((m) => (
@@ -123,7 +124,7 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
             type="button"
             onClick={() => onChange(DEFAULT_GRID_SETTINGS)}
             className="min-h-[44px] rounded-lg border px-3 text-[10px] font-bold tracking-[1px] transition-colors"
-            style={{ borderColor: C.border, color: C.muted }}
+            style={{ borderColor: C.border, color: C.dim }}
             aria-label="Reset inputs to defaults"
           >
             RESET

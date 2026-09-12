@@ -100,9 +100,11 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
   const chosen = candidates[selectedIdx] ?? null;
   // Over budget → size the ticket to what the user can actually invest; the warning states the shortfall.
   const investment = chosen
-    ? settings.maxInvestment != null && chosen.requiredInvestment > settings.maxInvestment
-      ? settings.maxInvestment
-      : chosen.requiredInvestment
+    ? settings.goalUsd === null
+      ? settings.maxInvestment // investment mode: the ticket is sized to what the user enters
+      : settings.maxInvestment != null && chosen.requiredInvestment > settings.maxInvestment
+        ? settings.maxInvestment
+        : chosen.requiredInvestment
     : null;
 
   // Re-simulate the chosen candidate at its real investment for the ticket, then apply the factor to
@@ -127,7 +129,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
     <span className="flex flex-wrap gap-x-3 gap-y-1">
       <span>Price · {set ? RES_LABEL[set.resolutionSec] : "…"} candles</span>
       {chosen && <span style={{ color: C.blue }}>▬ range {chosen.lower.toFixed(5)} – {chosen.upper.toFixed(5)}</span>}
-      {chosen && <span style={{ color: C.muted }}>┈ {chosen.grids} grids</span>}
+      {chosen && <span style={{ color: C.dim }}>┈ {chosen.grids} grids</span>}
       {price != null && <span className="text-white">— now {price.toFixed(5)}</span>}
     </span>
   );
@@ -162,7 +164,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
         caption={caption}
       />
 
-      <p className="mt-1 text-center text-[9px]" style={{ color: "#444" }}>
+      <p className="mt-1 text-center text-[11px]" style={{ color: C.dim }}>
         {set?.source === "fallback"
           ? "Backtest on CoinGecko daily prices (fallback — candle service unavailable)"
           : `Backtest on Pionex MON_USDT_PERP ${set ? RES_LABEL[set.resolutionSec] : ""} candles · ${set?.source === "db" ? "local db" : "live"}`}

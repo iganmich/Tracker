@@ -30,5 +30,6 @@ export const C = {
   purple: "#a78bfa",
   text: "#c8d0e0",
   muted: "#566070",
+  dim: "#a3adbf", // readable secondary text on the dark ground (grid analyst)
   font: "'JetBrains Mono', 'Courier New', monospace",
 } as const;

@@ -128,6 +128,17 @@ describe("optimizeGrid", () => {
     expect(far[1].pnlPct).toBeCloseTo(far[0].pnlPct, 12);
   });
 
+  it("investment mode: no goal → no sizing, candidates still ranked", () => {
+    const candles = ranging();
+    const currentPrice = candles[candles.length - 1].close;
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: null, maxInvestment: 2000, currentPrice, mode: "arithmetic", factor: 1, rankBy: "worst", minTradesPerDay: 0 });
+    expect(out.best).not.toBeNull();
+    expect(out.requiredInvestment).toBeNull();
+    expect(out.overBudget).toBe(false);
+    expect(out.best!.requiredInvestment).toBe(0);
+    expect(out.warnings.some((w) => w.includes("goal"))).toBe(false);
+  });
+
   it("handles empty candles", () => {
     const out = optimizeGrid({ candles: [], candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice: 0.025, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
     expect(out.best).toBeNull();

@@ -252,7 +252,7 @@ export function simulateGrid(
 export type RankBy = "worst" | "average";
 
 export interface GridSettings {
-  goalUsd: number;
+  goalUsd: number | null; // null = no goal: size everything to maxInvestment and report earnings
   maxInvestment: number | null;
   window: GridWindow;
   mode: GridMode;
@@ -275,7 +275,7 @@ export const isGridSettings = (v: unknown): v is GridSettings => {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
   return (
-    typeof o.goalUsd === "number" &&
+    (o.goalUsd === null || typeof o.goalUsd === "number") &&
     (o.maxInvestment === null || typeof o.maxInvestment === "number") &&
     ["1m", "3m", "6m", "max"].includes(o.window as string) &&
     (o.mode === "arithmetic" || o.mode === "geometric") &&
@@ -289,7 +289,7 @@ export const isGridSettings = (v: unknown): v is GridSettings => {
 export interface OptimizeInput {
   candles: Candle[];
   candleMs: number;
-  goalUsd: number;
+  goalUsd: number | null; // null → no sizing to a goal; requiredInvestment is 0
   maxInvestment: number | null;
   currentPrice: number;
   mode: GridMode;
@@ -419,8 +419,12 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
     warnings.push("No candle data for this window.");
     return none;
   }
-  if (!(goalUsd > 0) || !(currentPrice > 0)) {
-    warnings.push("Enter a monthly goal above zero.");
+  if (!(currentPrice > 0)) {
+    warnings.push("No current price.");
+    return none;
+  }
+  if (goalUsd !== null && !(goalUsd > 0)) {
+    warnings.push("Enter a monthly goal above zero, or leave it empty and enter an investment.");
     return none;
   }
 
@@ -454,7 +458,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
           profitPerGridPct: spacingPct - 2 * GRID_FEE_RATE,
           rankYield,
           liveMonthlyYield,
-          requiredInvestment: Math.ceil(goalUsd / liveMonthlyYield),
+          requiredInvestment: goalUsd !== null ? Math.ceil(goalUsd / liveMonthlyYield) : 0,
           stopLoss: 0, stopMargin: 0, stopLossPct: 0, stopExits: 0, stopPnlDeltaPct: 0, stopSweep: [],
         });
       }
@@ -493,6 +497,15 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
   }
 
   const best = bestPerGrids[0];
+  if (goalUsd === null) {
+    // Investment mode: nothing to size; the tab reports earnings at maxInvestment.
+    if (maxInvestment !== null && maxInvestment / best.grids < MIN_ORDER_USDT) {
+      warnings.push(`Investment too small for ${best.grids} grids — Pionex needs at least ${MIN_ORDER_USDT} USDT per grid.`);
+    }
+    if ((currentPrice - best.lower) / currentPrice < EDGE_WARN) warnings.push("Current price is within 5% of the lower bound — the bot would start almost fully in MON.");
+    if ((best.upper - currentPrice) / currentPrice < EDGE_WARN) warnings.push("Current price is within 5% of the upper bound — little room to sell before a breakout.");
+    return { best, requiredInvestment: null, overBudget: false, achievableMonthly: null, alternatives: bestPerGrids.slice(1), warnings, tested, kept: candidates.length };
+  }
   const requiredInvestment = best.requiredInvestment;
   if (requiredInvestment / best.grids < MIN_ORDER_USDT) {
     warnings.push(

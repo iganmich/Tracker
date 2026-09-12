@@ -15,13 +15,13 @@ interface CandidateTicketProps {
 function Field({ label, unit, value, sub }: { label: string; unit?: string; value: string; sub?: string }) {
   return (
     <div className="rounded-[10px] px-3 py-2.5" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.14)" }}>
-      <p className="m-0 flex justify-between text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }}>
+      <p className="m-0 flex justify-between text-[11px] uppercase tracking-[1px]" style={{ color: C.dim }}>
         <span>{label}</span>
-        {unit && <span style={{ color: C.muted }}>{unit}</span>}
+        {unit && <span style={{ color: C.dim }}>{unit}</span>}
       </p>
       <p className="m-0 mt-1 text-[22px] font-extrabold tracking-tight text-white tabular-nums">
         {value}
-        {sub && <span className="ml-1 text-[11px] font-normal" style={{ color: C.muted }}>{sub}</span>}
+        {sub && <span className="ml-1 text-[11px] font-normal" style={{ color: C.dim }}>{sub}</span>}
       </p>
     </div>
   );
@@ -38,7 +38,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
         <h3 className="m-0 text-[11px] font-bold uppercase tracking-[1px]" style={{ color: C.green }}>
           {candidate ? `Candidate ${rank} · what to type into Pionex` : "What to type into Pionex"}
         </h3>
-        <span className="text-[10px]" style={{ color: C.muted }}>spot grid · MON/USDT · fields in Pionex order</span>
+        <span className="text-[11px]" style={{ color: C.dim }}>spot grid · MON/USDT · fields in Pionex order</span>
       </div>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
@@ -56,14 +56,14 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
 
       {candidate && investment != null && candidate.stopSweep.length > 0 && (
         <div className="mt-3 overflow-x-auto">
-          <p className="m-0 mb-1 text-[9px] uppercase tracking-[1px]" style={{ color: C.muted }}>
+          <p className="m-0 mb-1 text-[11px] uppercase tracking-[1px]" style={{ color: C.dim }}>
             Stop-loss backtest for this grid · exits when a candle low touches the stop, re-enters when price closes back inside the range · figures over the whole window at {fmtUsd(investment)}
           </p>
           <table className="w-full border-collapse text-[11px] tabular-nums">
             <thead>
               <tr>
                 {["Stop", "Price", "Exits", "Worst exit", "Days out", "Grid profit", "Net P&L", ""].map((h, i) => (
-                  <th key={h || i} className={`py-1 pr-3 text-[9px] font-normal uppercase tracking-[1px] ${i >= 2 ? "text-right" : "text-left"}`} style={{ color: C.muted, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>{h}</th>
+                  <th key={h || i} className={`py-1 pr-3 text-[11px] font-normal uppercase tracking-[1px] ${i >= 2 ? "text-right" : "text-left"}`} style={{ color: C.dim, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -79,7 +79,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.daysOut > 0 ? r.daysOut.toFixed(1) : "—"}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{fmtUsd(investment * r.gridProfitPct)}</td>
                     <td className="py-1 pr-3 text-right font-bold" style={{ borderBottom: `1px solid ${C.border}`, color: r.pnlPct >= 0 ? C.green : C.red }}>{r.pnlPct >= 0 ? "+" : "−"}{fmtUsd(Math.abs(investment * r.pnlPct))}</td>
-                    <td className="py-1 text-right text-[10px]" style={{ borderBottom: `1px solid ${C.border}`, color: C.green }}>{chosen ? "recommended" : ""}</td>
+                    <td className="py-1 text-right text-[11px]" style={{ borderBottom: `1px solid ${C.border}`, color: C.green }}>{chosen ? "recommended" : ""}</td>
                   </tr>
                 );
               })}
@@ -89,7 +89,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
       )}
 
       {candidate && sized && investment != null && (
-        <p className="m-0 mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: C.muted }}>
+        <p className="m-0 mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: C.dim }}>
           {/* the tab pre-multiplies monthlyProfit by the resolution factor; recover it so the worst month gets the same correction */}
           <span>Worst month <b style={{ color: C.green }}>{fmtUsd(investment * sized.worstSliceYield * (sized.monthlyYield > 0 ? sized.monthlyProfit / (sized.monthlyYield * investment) : 1))} / month</b></span>
           <span>average <b className="text-white">{fmtUsd(sized.monthlyProfit)} / month</b></span>
