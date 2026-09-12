@@ -48,7 +48,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
         <Field label="Grid count" unit={candidate?.mode} value={candidate ? String(candidate.grids) : "—"} sub={candidate ? `${fmtPct(candidate.spacingPct * 100, 2)} / grid` : undefined} />
         <Field
           label="Stop loss"
-          unit={candidate ? `${fmtPct(candidate.stopMargin * 100, 0)} below lower` : "USDT"}
+          unit={candidate ? candidate.stopLabel : "USDT"}
           value={candidate ? fmtPrice(candidate.stopLoss) : "—"}
           sub={candidate && investment != null ? `worst −${fmtPct(candidate.stopLossPct * 100, 0)} ≈ ${fmtUsd(investment * candidate.stopLossPct)}` : undefined}
         />
@@ -62,18 +62,19 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
           <table className="w-full border-collapse text-[11px] tabular-nums">
             <thead>
               <tr>
-                {["Stop", "Price", "Exits", "Worst exit", "Days out", "Grid profit", "Net P&L", ""].map((h, i) => (
+                {["Stop", "Price", "Worst case", "Exits", "Worst exit", "Days out", "Grid profit", "Net P&L", ""].map((h, i) => (
                   <th key={h || i} className={`py-1 pr-3 text-[11px] font-normal uppercase tracking-[1px] ${i >= 2 ? "text-right" : "text-left"}`} style={{ color: C.dim, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {candidate.stopSweep.map((r) => {
-                const chosen = r.margin === candidate.stopMargin;
+                const chosen = r.stopPrice !== null && Math.abs(r.stopPrice - candidate.stopLoss) < 1e-12;
                 return (
-                  <tr key={r.margin ?? "none"} style={{ background: chosen ? `${C.green}12` : undefined, color: chosen ? "#fff" : C.text }}>
-                    <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.margin === null ? "none" : `${fmtPct(r.margin * 100, 0)} below`}</td>
+                  <tr key={r.label} style={{ background: chosen ? `${C.green}12` : undefined, color: chosen ? "#fff" : C.text }}>
+                    <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.label}</td>
                     <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.stopPrice === null ? "—" : fmtPrice(r.stopPrice)}</td>
+                    <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: C.red }}>−{fmtPct(r.worstCasePct * 100, 0)}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.exits}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: r.worstExitLossPct > 0 ? C.red : undefined }}>{r.worstExitLossPct > 0 ? `−${fmtPct(r.worstExitLossPct * 100)} · ${fmtUsd(investment * r.worstExitLossPct)}` : "—"}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.daysOut > 0 ? r.daysOut.toFixed(1) : "—"}</td>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candle } from "@/lib/candles";
-import { GRID_COUNTS, MIN_ORDER_USDT, STOP_MARGINS, optimizeGrid, pickStop, stopSweep, worstCaseLossPct } from "@/lib/grid";
+import { GRID_COUNTS, LOSS_CAPS, MIN_ORDER_USDT, STOP_MARGINS, optimizeGrid, pickStop, stopPriceForLoss, stopSweep, worstCaseLossPct } from "@/lib/grid";
 
 const H = 3_600_000;
 
@@ -34,7 +34,7 @@ describe("optimizeGrid", () => {
   it("finds a candidate in a ranging market and sizes the investment to the goal", () => {
     const candles = ranging();
     const currentPrice = candles[candles.length - 1].close;
-    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
     expect(out.best).not.toBeNull();
     const b = out.best!;
     expect(b.lower).toBeLessThan(currentPrice);
@@ -58,8 +58,8 @@ describe("optimizeGrid", () => {
   it("applies the resolution factor to sizing but not to ranking", () => {
     const candles = ranging();
     const currentPrice = candles[candles.length - 1].close;
-    const raw = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
-    const corrected = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1.57, rankBy: "average", minTradesPerDay: 0 });
+    const raw = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
+    const corrected = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1.57, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
     expect(corrected.best!.lower).toBe(raw.best!.lower);
     expect(corrected.best!.grids).toBe(raw.best!.grids);
     expect(corrected.requiredInvestment!).toBeLessThan(raw.requiredInvestment!);
@@ -69,7 +69,7 @@ describe("optimizeGrid", () => {
   it("flags over-budget and reports the achievable profit", () => {
     const candles = ranging();
     const currentPrice = candles[candles.length - 1].close;
-    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: 100, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: 100, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
     expect(out.overBudget).toBe(true);
     expect(out.achievableMonthly).toBeCloseTo(100 * out.best!.liveMonthlyYield, 9);
     expect(out.warnings.some((w) => w.toLowerCase().includes("budget"))).toBe(true);
@@ -78,7 +78,7 @@ describe("optimizeGrid", () => {
   it("returns no candidate in a strongly trending market, with a warning", () => {
     const candles = trending();
     const currentPrice = candles[candles.length - 1].close;
-    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
     expect(out.best).toBeNull();
     expect(out.requiredInvestment).toBeNull();
     expect(out.warnings.some((w) => w.includes("trending"))).toBe(true);
@@ -87,7 +87,7 @@ describe("optimizeGrid", () => {
   it("warns when the investment is too small for the grid count", () => {
     const candles = ranging();
     const currentPrice = candles[candles.length - 1].close;
-    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 1, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 1, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
     expect(out.best).not.toBeNull();
     expect(out.requiredInvestment! / out.best!.grids).toBeLessThan(MIN_ORDER_USDT);
     expect(out.warnings.some((w) => w.includes("too small"))).toBe(true);
@@ -96,12 +96,12 @@ describe("optimizeGrid", () => {
   it("ranks on the worst 30-day slice and drops low-activity grids when asked", () => {
     const candles = ranging();
     const currentPrice = candles[candles.length - 1].close;
-    const worst = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "worst", minTradesPerDay: 0 });
+    const worst = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "worst", minTradesPerDay: 0, maxLossPct: 1 });
     expect(worst.best).not.toBeNull();
     expect(worst.best!.rankYield).toBe(worst.best!.result.worstSliceYield);
     expect(worst.best!.rankYield).toBeLessThanOrEqual(worst.best!.result.monthlyYield + 1e-12);
     for (const a of worst.alternatives) expect(a.result.worstSliceYield).toBeLessThanOrEqual(worst.best!.result.worstSliceYield);
-    const busy = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "worst", minTradesPerDay: 3 });
+    const busy = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "worst", minTradesPerDay: 3, maxLossPct: 1 });
     for (const c of [busy.best!, ...busy.alternatives]) expect(c.result.tradesPerMonth / 30).toBeGreaterThanOrEqual(3);
     expect(busy.kept).toBeLessThanOrEqual(worst.kept);
   });
@@ -109,29 +109,45 @@ describe("optimizeGrid", () => {
   it("sweeps stop-loss margins and recommends the one that kept the most P&L", () => {
     const candles = ranging();
     const currentPrice = candles[candles.length - 1].close;
-    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
     const b = out.best!;
-    expect(b.stopSweep).toHaveLength(STOP_MARGINS.length + 1);
-    expect(b.stopSweep[0].margin).toBeNull();
-    expect(b.stopLoss).toBeCloseTo(b.lower * (1 - b.stopMargin), 12);
-    expect(STOP_MARGINS).toContain(b.stopMargin);
+    expect(b.stopSweep.length).toBeGreaterThanOrEqual(STOP_MARGINS.length + 1);
+    expect(b.stopSweep.length).toBeLessThanOrEqual(STOP_MARGINS.length + LOSS_CAPS.length + 1);
+    expect(b.stopSweep.some((r) => r.margin === null)).toBe(true);
+    expect(b.stopLoss).toBeCloseTo(b.lower * (1 - b.stopMargin), 9);
     expect(b.stopLossPct).toBeCloseTo(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, b.stopLoss), 12);
     expect(b.stopLossPct).toBeGreaterThan(0);
     expect(b.stopLossPct).toBeLessThan(0.5);
-    const pick = pickStop(b.stopSweep);
+    const pick = pickStop(b.stopSweep, 1);
     expect(b.stopExits).toBe(pick.exits);
     expect(b.stopPnlDeltaPct).toBeCloseTo(pick.pnlPct - b.stopSweep[0].pnlPct, 12);
     for (const a of out.alternatives) expect(a.stopSweep.length).toBeGreaterThan(0);
     // a stop the price never reaches changes nothing
-    const far = stopSweep(candles, { lower: b.lower, upper: b.upper, grids: b.grids, mode: b.mode }, H, [0.9]);
-    expect(far[1].exits).toBe(0);
-    expect(far[1].pnlPct).toBeCloseTo(far[0].pnlPct, 12);
+    const far = stopSweep(candles, { lower: b.lower, upper: b.upper, grids: b.grids, mode: b.mode }, H, [0.9], []);
+    const none = far.find((r) => r.margin === null)!;
+    const farStop = far.find((r) => r.margin !== null)!;
+    expect(farStop.exits).toBe(0);
+    expect(farStop.pnlPct).toBeCloseTo(none.pnlPct, 12);
+  });
+
+  it("max-loss cap picks a stop inside the range whose worst case respects the cap", () => {
+    const candles = ranging();
+    const currentPrice = candles[candles.length - 1].close;
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 0.05 });
+    const b = out.best!;
+    expect(b.stopLossPct).toBeLessThanOrEqual(0.05 + 1e-9);
+    expect(b.stopLoss).toBeGreaterThan(b.lower); // a 5% cap on a wide range needs a stop inside the range
+    // stopPriceForLoss inverts worstCaseLossPct
+    const p10 = stopPriceForLoss(b.lower, b.upper, b.grids, b.mode, 0.1);
+    expect(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, p10)).toBeCloseTo(0.1, 6);
+    // worst case is monotone: lower stop → bigger loss
+    expect(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, p10 * 0.9)).toBeGreaterThan(0.1);
   });
 
   it("investment mode: no goal → no sizing, candidates still ranked", () => {
     const candles = ranging();
     const currentPrice = candles[candles.length - 1].close;
-    const out = optimizeGrid({ candles, candleMs: H, goalUsd: null, maxInvestment: 2000, currentPrice, mode: "arithmetic", factor: 1, rankBy: "worst", minTradesPerDay: 0 });
+    const out = optimizeGrid({ candles, candleMs: H, goalUsd: null, maxInvestment: 2000, currentPrice, mode: "arithmetic", factor: 1, rankBy: "worst", minTradesPerDay: 0, maxLossPct: 1 });
     expect(out.best).not.toBeNull();
     expect(out.requiredInvestment).toBeNull();
     expect(out.overBudget).toBe(false);
@@ -140,7 +156,7 @@ describe("optimizeGrid", () => {
   });
 
   it("handles empty candles", () => {
-    const out = optimizeGrid({ candles: [], candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice: 0.025, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0 });
+    const out = optimizeGrid({ candles: [], candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice: 0.025, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
     expect(out.best).toBeNull();
     expect(out.tested).toBe(0);
   });

@@ -127,7 +127,7 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
                 <span className="block text-[11px]" style={{ color: C.dim }}>{Math.round(c.result.tradesPerMonth / 30)} rounds / day</span>
               </span>
               <span className="text-[11px]" style={{ color: C.dim }}>
-                Stop loss ({fmtPct(c.stopMargin * 100, 0)} below)
+                Stop loss ({c.stopLabel})
                 <b className="block text-[13px] text-white">
                   {fmtPrice(c.stopLoss)} · <span style={{ color: C.red }}>worst −{fmtPct(c.stopLossPct * 100, 0)}</span>
                 </b>

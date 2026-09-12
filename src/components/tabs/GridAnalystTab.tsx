@@ -92,8 +92,9 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
       factor,
       rankBy: settings.rankBy,
       minTradesPerDay: settings.minTradesPerDay,
+      maxLossPct: settings.maxLossPct,
     });
-  }, [set, candleMs, price, settings.goalUsd, settings.maxInvestment, settings.mode, settings.rankBy, settings.minTradesPerDay, factor]);
+  }, [set, candleMs, price, settings.goalUsd, settings.maxInvestment, settings.mode, settings.rankBy, settings.minTradesPerDay, settings.maxLossPct, factor]);
 
   const candidates = useMemo(() => (out?.best ? [out.best, ...out.alternatives] : []), [out]);
   const selectedIdx = Math.min(selected, Math.max(0, candidates.length - 1));

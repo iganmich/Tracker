@@ -134,6 +134,29 @@ describe("simulateGrid", () => {
     expect(noReenter.trades).toBe(5);
   });
 
+  it("stop inside the range: price oscillating across the stop cannot create profit or exit every candle", () => {
+    // Stop at L[5]; price oscillates between L[4] and L[6] with closes alternating just above/below the stop.
+    const stop = L[5];
+    const candles: Candle[] = Array.from({ length: 40 }, (_, i) => {
+      const up = i % 2 === 0;
+      return up
+        ? { time: i * DAY, open: L[4] * 1.001, high: L[6], low: L[4], close: L[6] * 0.999 }
+        : { time: i * DAY, open: L[6] * 0.999, high: L[6], low: L[4], close: L[4] * 1.001 };
+    });
+    const withStop = simulateGrid(candles, params, DAY, GRID_FEE_RATE, { price: stop, reenter: true });
+    const noStop = simulateGrid(candles, params, DAY);
+    expect(Number.isFinite(withStop.totalPnl)).toBe(true);
+    expect(withStop.exits.length).toBeLessThanOrEqual(candles.length / 2 + 1);
+    for (const e of withStop.exits) expect(e.price).toBeLessThanOrEqual(stop);
+    // stopping out repeatedly in a whipsaw must not beat running through it
+    expect(withStop.totalPnl).toBeLessThanOrEqual(noStop.totalPnl + 1e-9);
+    // gap through the stop fills at the open, never at the stop price
+    const gap: Candle[] = [{ time: 0, open: (L[5] + L[6]) / 2, high: L[6], low: L[5], close: L[5] }, { time: DAY, open: L[3], high: L[3], low: L[2], close: L[2] }];
+    const g = simulateGrid(gap, params, DAY, GRID_FEE_RATE, { price: L[4] * 1.001, reenter: false });
+    expect(g.exits).toHaveLength(1);
+    expect(g.exits[0].price).toBeCloseTo(L[3], 12);
+  });
+
   it("empty input returns zeros", () => {
     const r = simulateGrid([], params, DAY);
     expect(r.trades).toBe(0);
