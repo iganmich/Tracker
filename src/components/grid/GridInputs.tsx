@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { C } from "@/lib/constants";
 import { GRID_WINDOW_LABEL, type GridWindow } from "@/lib/candles";
-import type { GridMode, GridSettings } from "@/lib/grid";
+import { DEFAULT_GRID_SETTINGS, type GridMode, type GridSettings } from "@/lib/grid";
 
 interface GridInputsProps {
   value: GridSettings;
@@ -90,6 +90,15 @@ export function GridInputs({ value, onChange }: GridInputsProps) {
               {m.label}
             </Pill>
           ))}
+          <button
+            type="button"
+            onClick={() => onChange(DEFAULT_GRID_SETTINGS)}
+            className="min-h-[44px] rounded-lg border px-3 text-[10px] font-bold tracking-[1px] transition-colors"
+            style={{ borderColor: C.border, color: C.muted }}
+            aria-label="Reset inputs to defaults"
+          >
+            RESET
+          </button>
         </div>
       </div>
     </section>

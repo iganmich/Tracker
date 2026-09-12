@@ -96,7 +96,12 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
   const candidates = useMemo(() => (out?.best ? [out.best, ...out.alternatives] : []), [out]);
   const selectedIdx = Math.min(selected, Math.max(0, candidates.length - 1));
   const chosen = candidates[selectedIdx] ?? null;
-  const investment = chosen ? chosen.requiredInvestment : null;
+  // Over budget → size the ticket to what the user can actually invest; the warning states the shortfall.
+  const investment = chosen
+    ? settings.maxInvestment != null && chosen.requiredInvestment > settings.maxInvestment
+      ? settings.maxInvestment
+      : chosen.requiredInvestment
+    : null;
 
   // Re-simulate the chosen candidate at its real investment for the ticket, then apply the factor to
   // the live-facing numbers (profit and trades) — the optimizer ranked on raw yield on purpose.
@@ -134,6 +139,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
         selected={selectedIdx}
         onSelect={setSelected}
         goalUsd={settings.goalUsd}
+        maxInvestment={settings.maxInvestment}
         currentPrice={price}
         tested={out?.tested ?? 0}
         kept={out?.kept ?? 0}

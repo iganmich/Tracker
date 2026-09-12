@@ -12,6 +12,7 @@ interface CandidateBoardProps {
   selected: number;
   onSelect: (i: number) => void;
   goalUsd: number;
+  maxInvestment: number | null;
   currentPrice: number | null;
   tested: number;
   kept: number;
@@ -30,8 +31,13 @@ function Bar({ fraction, color, marker }: { fraction: number; color: string; mar
   );
 }
 
-export function CandidateBoard({ candidates, selected, onSelect, goalUsd, currentPrice, tested, kept, loading, emptyMessage }: CandidateBoardProps) {
+export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInvestment, currentPrice, tested, kept, loading, emptyMessage }: CandidateBoardProps) {
   const topYield = candidates[0]?.result.monthlyYield ?? 1;
+  const best = candidates[0];
+  const budgetLine =
+    best && maxInvestment != null && best.requiredInvestment > maxInvestment
+      ? `Your ${fmtUsd(maxInvestment)} max reaches about ${fmtUsd(maxInvestment * best.liveMonthlyYield)} / month with candidate 1 — ${fmtUsd(goalUsd)} needs ${fmtUsd(best.requiredInvestment)}.`
+      : null;
   return (
     <section className="mb-3" aria-label="Grid candidates">
       <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
@@ -40,6 +46,11 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, curren
           <p className="m-0 text-[10px]" style={{ color: C.muted }}>
             {loading ? "Backtesting…" : `${tested.toLocaleString()} configurations tested, ${kept.toLocaleString()} kept price in range ≥ 90% of the window.`}
           </p>
+          {!loading && budgetLine && (
+            <p className="m-0 mt-1 text-[11px]" style={{ color: C.yellow }}>
+              ⚠ {budgetLine}
+            </p>
+          )}
         </div>
       </div>
 
@@ -96,8 +107,17 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, curren
                 <b className="block text-[13px] text-white">{fmtPct(c.result.timeInRangePct, 0)} · −{fmtPct(c.result.maxDrawdownPct)}</b>
               </span>
               <span className="col-span-3 text-left md:col-span-1 md:text-right">
-                <b className="block text-[13px]" style={{ color: C.green }}>{fmtUsd(c.requiredInvestment)}</b>
-                <span className="text-[10px]" style={{ color: C.muted }}>to earn {fmtUsd(goalUsd)}</span>
+                {maxInvestment != null && c.requiredInvestment > maxInvestment ? (
+                  <>
+                    <b className="block text-[13px]" style={{ color: C.yellow }}>{fmtUsd(maxInvestment * c.liveMonthlyYield)} / mo</b>
+                    <span className="text-[10px]" style={{ color: C.muted }}>at your {fmtUsd(maxInvestment)} · goal needs {fmtUsd(c.requiredInvestment)}</span>
+                  </>
+                ) : (
+                  <>
+                    <b className="block text-[13px]" style={{ color: C.green }}>{fmtUsd(c.requiredInvestment)}</b>
+                    <span className="text-[10px]" style={{ color: C.muted }}>to earn {fmtUsd(goalUsd)}</span>
+                  </>
+                )}
               </span>
             </div>
           );
