@@ -166,10 +166,10 @@ Computation: `useMemo(() => optimizeGrid(...), [windowCandles, goalUsd, maxInves
 
 ### 6. Wiring
 
-- `types.ts`: `TabId` adds `"grid"`; add `Candle`-independent types stay in `grid.ts`/`klines.ts`.
+- `types.ts`: `TabId` adds `"grid"`; `Candle`/`GridWindow` live in `candles.ts`, grid types in `grid.ts`.
 - `constants.ts`: `TABS` adds `{ id: "grid", label: "⚡ Grid Analyst" }` after backtest.
 - `dashboard/page.tsx`: `TAB_IDS` adds `"grid"`; renders `<GridAnalystTab priceData={priceData} currentPrice={currentPrice} />`.
-- AGENTS.md / README: add tab description, `/api/klines` route, `mon.grid` storage key, data-source note about MON spot vs perp.
+- AGENTS.md / README: add tab description, `/api/candles` route, `mon.grid` storage key, data-source note (KuCoin spot candles; Pionex API has no MON spot pair).
 
 ### 7. Testing
 
@@ -194,7 +194,7 @@ Add **vitest** (devDependency, `npm test` script, `vitest.config.ts` with `@` al
 - With `maxInvestment` below required: `overBudget === true`, `achievableMonthly === maxInvestment × monthlyYield`.
 - Strongly trending synthetic data: `best === null` and a warning is present.
 
-**Route** — no unit test; verified manually with curl (`/api/klines` returns ascending candles, bad `limit` → 400).
+**Route** — no unit test; verified manually with curl (`/api/candles?days=90` returns ascending 5-minute candles with `resolutionSec: 300`, `days=400` returns `resolutionSec: 900`, bad `days` → 400).
 
 ## Out of scope (v1)
 
