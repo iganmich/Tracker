@@ -139,7 +139,14 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
                 ) : (
                   <>
                     <b className="block text-[13px]" style={{ color: C.green }}>{fmtUsd(c.requiredInvestment)}</b>
-                    <span className="text-[10px]" style={{ color: C.muted }}>to earn {fmtUsd(goalUsd)}</span>
+                    <span className="block text-[10px]" style={{ color: C.muted }}>
+                      for {fmtUsd(goalUsd)} in {rankBy === "worst" ? "the worst month" : "an average month"}
+                    </span>
+                    <span className="block text-[10px]" style={{ color: C.muted }}>
+                      {rankBy === "worst"
+                        ? `avg month ≈ ${fmtUsd(c.requiredInvestment * c.result.monthlyYield * (c.liveMonthlyYield / c.rankYield))}`
+                        : `worst month ≈ ${fmtUsd(c.requiredInvestment * c.result.worstSliceYield * (c.liveMonthlyYield / c.rankYield))}`}
+                    </span>
                   </>
                 )}
               </span>
