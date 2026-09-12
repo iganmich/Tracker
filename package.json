@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:local:up": "docker compose -f infra/local-db/docker-compose.yml up -d --wait",
     "db:local:down": "docker compose -f infra/local-db/docker-compose.yml down",
     "db:local:psql": "docker compose -f infra/local-db/docker-compose.yml exec -T postgres psql -U mon -d mon",
@@ -29,6 +31,8 @@
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
   }
 }
