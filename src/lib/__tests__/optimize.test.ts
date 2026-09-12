@@ -47,8 +47,10 @@ describe("optimizeGrid", () => {
     expect(out.overBudget).toBe(false);
     expect(out.alternatives.length).toBeGreaterThan(0);
     expect(out.alternatives.length).toBeLessThanOrEqual(5);
-    // ranked by raw yield, best first
+    // ranked by raw yield, best first; one row per grid count so the board compares spacing choices
     for (const a of out.alternatives) expect(a.result.monthlyYield).toBeLessThanOrEqual(b.result.monthlyYield);
+    const gridCounts = [b, ...out.alternatives].map((c) => c.grids);
+    expect(new Set(gridCounts).size).toBe(gridCounts.length);
     expect(out.tested).toBeGreaterThan(out.kept);
     expect(out.kept).toBeGreaterThanOrEqual(1 + out.alternatives.length);
   });

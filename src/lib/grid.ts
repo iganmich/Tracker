@@ -307,6 +307,16 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
   }
   candidates.sort((a, b) => b.result.monthlyYield - a.result.monthlyYield);
 
+  // Ranking on raw yield favours wide spacing, so the top of the list would be six near-identical
+  // 10-grid ranges. The board is a comparison, so keep only the best range per grid count.
+  const bestPerGrids: Candidate[] = [];
+  const seenGrids = new Set<number>();
+  for (const c of candidates) {
+    if (seenGrids.has(c.grids)) continue;
+    seenGrids.add(c.grids);
+    bestPerGrids.push(c);
+  }
+
   if (candidates.length === 0) {
     warnings.push(
       `No grid configuration worked on this window: either price left every range for > ${100 - MIN_IN_RANGE_PCT}% of the time, or profit came only from selling the starting position on a rise — the market is trending, not ranging. Try another window or wait for a range.`,
@@ -314,7 +324,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
     return { ...none, tested };
   }
 
-  const best = candidates[0];
+  const best = bestPerGrids[0];
   const requiredInvestment = best.requiredInvestment;
   if (requiredInvestment / best.grids < MIN_ORDER_USDT) {
     warnings.push(
@@ -336,7 +346,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
     requiredInvestment,
     overBudget,
     achievableMonthly,
-    alternatives: candidates.slice(1, 6),
+    alternatives: bestPerGrids.slice(1, 6),
     warnings,
     tested,
     kept: candidates.length,
