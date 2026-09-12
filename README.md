@@ -8,6 +8,7 @@ Price intelligence dashboard for **MON (Monad)** — unlock tracker, investment 
 - **Investment Cycles** — algorithmic detection of past pump → dip → recovery cycles, projection of upcoming buy/sell windows, and a **Buy Signal Score (0-100)** combining time/price/pump/momentum factors with a price-proximity meter
 - **Support & Resistance** — auto-detected levels by touch count + manual level overlay
 - **Backtest** — per-cycle table (buy/sell dates, prices, hold days, drop %, recovery %, return) with win/loss color coding
+- **Grid Analyst** — enter a monthly USD goal; the tab backtests ~300 spot-grid configurations on Pionex MON_USDT_PERP minute candles, ranks the ones that stayed in range, and shows the investment, price range and grid count to type into Pionex. Calibrated against a live Pionex grid bot.
 - **Configurable thresholds** — sliders on the Cycles tab let you loosen or tighten dip detection live; settings persist across refreshes via `localStorage`
 - **Dark terminal aesthetic** — JetBrains Mono, electric green/amber/red palette, tabular numerals, focus rings, mobile-first responsive grids, `prefers-reduced-motion` respected
 
@@ -20,7 +21,7 @@ Price intelligence dashboard for **MON (Monad)** — unlock tracker, investment 
 | Styling | Tailwind v4 + CSS variables |
 | Charts | recharts |
 | Font | JetBrains Mono via `next/font/google` |
-| Data | CoinGecko `coins/monad` daily prices (mock-data fallback); KuCoin `MON-USDT` minute candles in a local Postgres for backtests |
+| Data | CoinGecko `coins/monad` daily prices (mock-data fallback); Pionex `MON_USDT_PERP` minute candles (KuCoin as deep-history backup) in a local Postgres for backtests |
 | AI | Server-side proxy to Anthropic at `/api/claude` |
 | Deploy | Coolify (Hetzner), Dockerfile-based, Next.js standalone output |
 
@@ -29,7 +30,9 @@ Price intelligence dashboard for **MON (Monad)** — unlock tracker, investment 
 ```
 src/
 ├── app/
-│   ├── api/claude/route.ts    # Anthropic streaming proxy (server-only key)
+│   ├── api/
+│   │   ├── claude/route.ts    # Anthropic streaming proxy (server-only key)
+│   │   └── candles/route.ts   # Candle history proxy (Postgres or live Pionex)
 │   ├── dashboard/page.tsx     # Top-level client page (state + tab routing)
 │   ├── layout.tsx             # JetBrains Mono, design tokens
 │   ├── globals.css            # CSS variables (--bg, --green, --muted, …)
@@ -39,7 +42,9 @@ src/
 │   │   ├── UnlockTab.tsx
 │   │   ├── CyclesTab.tsx
 │   │   ├── LevelsTab.tsx
-│   │   └── BacktestTab.tsx
+│   │   ├── BacktestTab.tsx
+│   │   └── GridAnalystTab.tsx # Grid Analyst tab (state, fetch, memo, layout)
+│   ├── grid/                  # GridInputs, CandidateBoard, CandidateTicket, GridChart
 │   ├── BuySignalBadge.tsx     # 0-100 score + factor bars + proximity meter
 │   ├── ChartFrame.tsx         # Skeleton-loading chart wrapper, responsive height
 │   ├── ChartTooltip.tsx
@@ -49,11 +54,15 @@ src/
 │   └── ThresholdControls.tsx  # 4 sliders + reset
 └── lib/
     ├── analytics.ts           # calcSR, detectBuyZones, projectFutureCycles, computeBuySignal
+    ├── candles.ts             # Candle/GridWindow types, fetchCandles, resolution factors
     ├── claude.ts              # streaming client → /api/claude
     ├── constants.ts           # UNLOCK_EVENTS, TABS, color palette `C`
+    ├── grid.ts                # simulateGrid + optimizeGrid (pure grid backtest/optimizer)
     ├── prices.ts              # CoinGecko fetch + mock fallback
+    ├── server/                # candles-db.ts (Postgres), candles-pionex.ts (live fallback)
     ├── storage.ts             # usePersistentState (localStorage hook)
-    └── types.ts               # all domain types + DEFAULT_BUY_ZONE_OPTIONS
+    ├── types.ts               # all domain types + DEFAULT_BUY_ZONE_OPTIONS
+    └── __tests__/             # vitest specs + calibration fixtures
 ```
 
 ## Running Locally
@@ -62,6 +71,7 @@ src/
 echo "ANTHROPIC_API_KEY=sk-ant-..." > .env.local
 npm install
 npm run dev
+npm test
 ```
 
 Open [http://localhost:3000](http://localhost:3000) — redirects to `/dashboard`.
@@ -72,11 +82,11 @@ If CoinGecko is unreachable the dashboard transparently falls back to embedded m
 
 ```bash
 npm run db:local:up        # own Postgres 17 container on port 5460 (separate from the AIMS stacks)
-npm run candles:ingest     # KuCoin MON-USDT candles, 1min → 1day, from launch; incremental on re-run
+npm run candles:ingest     # Pionex MON_USDT_PERP + KuCoin MON-USDT candles, 1min → 1day, from launch; incremental on re-run
 echo "MON_DATABASE_URL=postgresql://mon:localdev@localhost:5460/mon" >> .env.local
 ```
 
-Without `MON_DATABASE_URL` the app fetches candles live from KuCoin instead.
+Grid Analyst backtests run on **Pionex `MON_USDT_PERP`** candles (calibrated against a live Pionex grid bot); KuCoin `MON-USDT` is kept only as a deep-history backup, since Pionex caps each interval at 10,000 candles. Without `MON_DATABASE_URL` the app fetches candles live from Pionex instead.
 
 ## Deployment (Coolify)
 
@@ -93,10 +103,11 @@ Repo is Coolify-ready out of the box.
 
 ## Persistence
 
-The dashboard saves two values to `localStorage`:
+The dashboard saves three values to `localStorage`:
 
 - `mon.thresholds` — buy-zone detection sliders
 - `mon.activeTab` — which tab was last open
+- `mon.grid` — Grid Analyst inputs (goal, max investment, window, mode)
 
 Both are type-guarded on read; corrupt or missing values fall back to defaults.
 
