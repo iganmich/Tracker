@@ -101,7 +101,9 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
               <span className="col-span-2 text-[11px] text-white md:col-span-1">
                 {fmtPrice(c.lower)} – {fmtPrice(c.upper)}
                 <span className="block text-[11px]" style={{ color: C.dim }}>
-                  {pos !== undefined ? `now sits ${Math.round(pos * 100)}% up the range` : "range"}
+                  {pos !== undefined
+                    ? `now ${Math.round(pos * 100)}% up the range · starts ≈${Math.round((1 - pos) * 100)}% MON / ${Math.round(pos * 100)}% USDT`
+                    : "range"}
                 </span>
                 <Bar fraction={1} color={`${C.blue}59`} marker={pos} />
               </span>
