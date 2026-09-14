@@ -131,7 +131,8 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
               <span className="text-[11px]" style={{ color: C.dim }}>
                 Stop loss ({c.stopLabel})
                 <b className="block text-[13px] text-white">
-                  {fmtPrice(c.stopLoss)} · <span style={{ color: C.red }}>worst −{fmtPct(c.stopLossPct * 100, 0)}</span>
+                  {fmtPrice(c.stopLoss)} · <span style={{ color: C.red }}>−{fmtPct(c.stopLossPct * 100, 0)}</span>
+                  <span className="ml-1 text-[10px] font-normal" style={{ color: C.dim }}>from here · −{fmtPct(c.stopLossFromTopPct * 100, 0)} from top</span>
                 </b>
                 <span className="block text-[11px]" style={{ color: c.stopExits > 0 ? C.yellow : C.dim }}>
                   {c.stopExits > 0 ? `fired ${c.stopExits}× in window · ` : "never fired in window · "}

@@ -50,7 +50,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
           label="Stop loss"
           unit={candidate ? candidate.stopLabel : "USDT"}
           value={candidate ? fmtPrice(candidate.stopLoss) : "—"}
-          sub={candidate && investment != null ? `worst −${fmtPct(candidate.stopLossPct * 100, 0)} ≈ ${fmtUsd(investment * candidate.stopLossPct)}` : undefined}
+          sub={candidate && investment != null ? `worst from here −${fmtPct(candidate.stopLossPct * 100, 0)} ≈ ${fmtUsd(investment * candidate.stopLossPct)}` : undefined}
         />
       </div>
 
@@ -62,7 +62,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
           <table className="w-full border-collapse text-[11px] tabular-nums">
             <thead>
               <tr>
-                {["Stop", "Price", "Worst case", "Exits", "Worst exit", "Days out", "Grid profit", "Net P&L", ""].map((h, i) => (
+                {["Stop", "Price", "Worst from here", "From top", "Exits", "Worst exit", "Days out", "Grid profit", "Net P&L", ""].map((h, i) => (
                   <th key={h || i} className={`py-1 pr-3 text-[11px] font-normal uppercase tracking-[1px] ${i >= 2 ? "text-right" : "text-left"}`} style={{ color: C.dim, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>{h}</th>
                 ))}
               </tr>
@@ -75,6 +75,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
                     <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.label}</td>
                     <td className="py-1 pr-3" style={{ borderBottom: `1px solid ${C.border}` }}>{r.stopPrice === null ? "—" : fmtPrice(r.stopPrice)}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: C.red }}>{r.stopPrice === null ? "unbounded" : `−${fmtPct(r.worstCasePct * 100, 0)}`}</td>
+                    <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: C.dim }}>{r.stopPrice === null ? "unbounded" : `−${fmtPct(r.worstFromTopPct * 100, 0)}`}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.exits}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}`, color: r.worstExitLossPct > 0 ? C.red : undefined }}>{r.worstExitLossPct > 0 ? `−${fmtPct(r.worstExitLossPct * 100)} · ${fmtUsd(investment * r.worstExitLossPct)}` : "—"}</td>
                     <td className="py-1 pr-3 text-right" style={{ borderBottom: `1px solid ${C.border}` }}>{r.daysOut > 0 ? r.daysOut.toFixed(1) : "—"}</td>

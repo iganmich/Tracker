@@ -322,7 +322,8 @@ export interface Candidate {
   stopLoss: number; // recommended Pionex stop-loss price (best row of the sweep within the max-loss cap)
   stopLabel: string; // e.g. "cap −10%" or "5% below lower"
   stopMargin: number; // fraction below the lower bound (negative = inside the range)
-  stopLossPct: number; // worst case: fraction of the investment lost if the stop fires with every level bought
+  stopLossPct: number; // worst case from the current price: fraction of the investment lost if price falls straight to the stop
+  stopLossFromTopPct: number; // worst case if price first rises to the top of the range, then falls to the stop
   stopExits: number; // times the recommended stop fired in the window (with re-entry)
   stopPnlDeltaPct: number; // pnl with the recommended stop − pnl without, as a fraction of investment
   stopSweep: StopSweepRow[]; // full sweep for the ticket's table
@@ -337,7 +338,8 @@ export interface StopSweepRow {
   label: string; // "none", "5% below lower", "cap −10%"
   margin: number | null; // fraction below the lower bound (negative = inside the range); null = no stop
   stopPrice: number | null;
-  worstCasePct: number; // theoretical worst case for this stop, 0..1
+  worstCasePct: number; // worst case if price falls from the entry (current) price to the stop, 0..1
+  worstFromTopPct: number; // worst case if price first rises to the top of the range, then falls to the stop
   exits: number;
   worstExitLossPct: number; // largest lossFromEntry / investment, 0..1
   daysOut: number;
@@ -350,41 +352,58 @@ export interface StopSweepRow {
  * is held at its level and sold at the stop. Fraction of capital lost, grid profit ignored. Works for a stop
  * inside the range too (levels below it are never bought, so they cost nothing).
  */
-export function worstCaseLossPct(lower: number, upper: number, grids: number, mode: GridMode, stopPrice: number): number {
+export function worstCaseLossPct(lower: number, upper: number, grids: number, mode: GridMode, stopPrice: number, entryPrice?: number): number {
   const L = gridLevels(lower, upper, grids, mode);
   let loss = 0;
-  for (let k = 0; k < grids; k++) if (L[k] > stopPrice) loss += 1 - stopPrice / L[k];
+  for (let k = 0; k < grids; k++) {
+    if (entryPrice !== undefined && L[k + 1] > entryPrice) {
+      // seeded sell: q/L[k] coins bought at the entry price, sold at the stop
+      if (entryPrice > stopPrice) loss += (entryPrice - stopPrice) / L[k];
+    } else if (L[k] > stopPrice) {
+      // grid buy at L[k] on the way down, sold at the stop
+      loss += 1 - stopPrice / L[k];
+    }
+  }
   return Math.max(0, loss / grids);
 }
 
-/** The stop price at which the worst case equals `targetLoss` (fraction). Bisection; monotone in price. */
-export function stopPriceForLoss(lower: number, upper: number, grids: number, mode: GridMode, targetLoss: number): number {
+/**
+ * The stop price at which the worst case equals `targetLoss` (fraction). With `entryPrice` the worst case is
+ * a fall from there (so the result is always below the entry); without it, a fall from the top of the range.
+ */
+export function stopPriceForLoss(lower: number, upper: number, grids: number, mode: GridMode, targetLoss: number, entryPrice?: number): number {
   let lo = lower * 0.3;
-  let hi = upper;
+  let hi = entryPrice ?? upper;
   for (let i = 0; i < 60; i++) {
     const mid = (lo + hi) / 2;
-    if (worstCaseLossPct(lower, upper, grids, mode, mid) > targetLoss) lo = mid;
+    if (worstCaseLossPct(lower, upper, grids, mode, mid, entryPrice) > targetLoss) lo = mid;
     else hi = mid;
   }
   return hi;
 }
 
+/** A stop must sit clearly below the current price or it fires on the first candle. */
+export const STOP_BELOW_ENTRY = 0.01;
+
 /**
  * Backtest the same grid with a stop at each margin below the lower bound (re-entering when price closes back
  * inside the range) and without a stop. Rows are per-window figures as fractions of the investment.
  */
-export function stopSweep(candles: Candle[], p: Omit<GridParams, "investment">, candleMs: number, margins = STOP_MARGINS, lossCaps = LOSS_CAPS): StopSweepRow[] {
+export function stopSweep(candles: Candle[], p: Omit<GridParams, "investment">, candleMs: number, entryPrice: number, margins = STOP_MARGINS, lossCaps = LOSS_CAPS): StopSweepRow[] {
   const params = { ...p, investment: NOMINAL_INVESTMENT };
   const rows: StopSweepRow[] = [];
   const none = simulateGrid(candles, params, candleMs);
-  rows.push({ label: "none", margin: null, stopPrice: null, worstCasePct: worstCaseLossPct(p.lower, p.upper, p.grids, p.mode, 0), exits: 0, worstExitLossPct: 0, daysOut: 0, gridProfitPct: none.gridProfit / NOMINAL_INVESTMENT, pnlPct: none.totalPnl / NOMINAL_INVESTMENT });
+  rows.push({ label: "none", margin: null, stopPrice: null, worstCasePct: 1, worstFromTopPct: 1, exits: 0, worstExitLossPct: 0, daysOut: 0, gridProfitPct: none.gridProfit / NOMINAL_INVESTMENT, pnlPct: none.totalPnl / NOMINAL_INVESTMENT });
+  const maxStop = entryPrice * (1 - STOP_BELOW_ENTRY);
   const run = (label: string, stopPrice: number) => {
+    if (stopPrice >= maxStop) return; // would fire immediately
     const r = simulateGrid(candles, params, candleMs, GRID_FEE_RATE, { price: stopPrice, reenter: true });
     rows.push({
       label,
       margin: 1 - stopPrice / p.lower,
       stopPrice,
-      worstCasePct: worstCaseLossPct(p.lower, p.upper, p.grids, p.mode, stopPrice),
+      worstCasePct: worstCaseLossPct(p.lower, p.upper, p.grids, p.mode, stopPrice, entryPrice),
+      worstFromTopPct: worstCaseLossPct(p.lower, p.upper, p.grids, p.mode, stopPrice),
       exits: r.exits.length,
       worstExitLossPct: r.exits.reduce((m, e) => Math.max(m, e.lossFromEntry), 0) / NOMINAL_INVESTMENT,
       daysOut: r.daysOut,
@@ -394,7 +413,7 @@ export function stopSweep(candles: Candle[], p: Omit<GridParams, "investment">, 
   };
   // Loss caps: a stop inside (or below) the range so the worst case never exceeds the cap.
   for (const cap of lossCaps) {
-    const price = stopPriceForLoss(p.lower, p.upper, p.grids, p.mode, cap);
+    const price = stopPriceForLoss(p.lower, p.upper, p.grids, p.mode, cap, entryPrice);
     if (price > p.lower * (1 - Math.max(...margins))) run(`cap −${Math.round(cap * 100)}%`, price);
   }
   for (const margin of margins) run(margin === 0 ? "at lower bound" : `${Math.round(margin * 100)}% below lower`, p.lower * (1 - margin));
@@ -501,7 +520,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
           rankYield,
           liveMonthlyYield,
           requiredInvestment: goalUsd !== null ? Math.ceil(goalUsd / liveMonthlyYield) : 0,
-          stopLoss: 0, stopLabel: "", stopMargin: 0, stopLossPct: 0, stopExits: 0, stopPnlDeltaPct: 0, stopSweep: [],
+          stopLoss: 0, stopLabel: "", stopMargin: 0, stopLossPct: 0, stopLossFromTopPct: 0, stopExits: 0, stopPnlDeltaPct: 0, stopSweep: [],
         });
       }
     }
@@ -519,13 +538,14 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
   }
   // Stop-loss sweep only for the rows the board shows (≤ GRID_COUNTS.length), 8 sims each.
   for (const c of bestPerGrids) {
-    const sweep = stopSweep(candles, { lower: c.lower, upper: c.upper, grids: c.grids, mode: c.mode }, candleMs);
+    const sweep = stopSweep(candles, { lower: c.lower, upper: c.upper, grids: c.grids, mode: c.mode }, candleMs, currentPrice);
     const pick = pickStop(sweep, input.maxLossPct > 0 ? input.maxLossPct : 1);
     c.stopSweep = sweep;
     c.stopLoss = pick.stopPrice ?? c.lower * (1 - 0.05);
     c.stopLabel = pick.label;
     c.stopMargin = pick.margin ?? 0.05;
     c.stopLossPct = pick.worstCasePct;
+    c.stopLossFromTopPct = pick.worstFromTopPct;
     c.stopExits = pick.exits;
     c.stopPnlDeltaPct = pick.pnlPct - sweep[0].pnlPct;
   }

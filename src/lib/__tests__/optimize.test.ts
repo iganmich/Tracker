@@ -115,7 +115,9 @@ describe("optimizeGrid", () => {
     expect(b.stopSweep.length).toBeLessThanOrEqual(STOP_MARGINS.length + LOSS_CAPS.length + 1);
     expect(b.stopSweep.some((r) => r.margin === null)).toBe(true);
     expect(b.stopLoss).toBeCloseTo(b.lower * (1 - b.stopMargin), 9);
-    expect(b.stopLossPct).toBeCloseTo(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, b.stopLoss), 12);
+    expect(b.stopLossPct).toBeCloseTo(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, b.stopLoss, currentPrice), 12);
+    expect(b.stopLossFromTopPct).toBeGreaterThanOrEqual(b.stopLossPct - 1e-12);
+    for (const r of b.stopSweep) if (r.stopPrice !== null) expect(r.stopPrice).toBeLessThan(currentPrice);
     expect(b.stopLossPct).toBeGreaterThan(0);
     expect(b.stopLossPct).toBeLessThan(0.5);
     const pick = pickStop(b.stopSweep, 1);
@@ -123,7 +125,7 @@ describe("optimizeGrid", () => {
     expect(b.stopPnlDeltaPct).toBeCloseTo(pick.pnlPct - b.stopSweep[0].pnlPct, 12);
     for (const a of out.alternatives) expect(a.stopSweep.length).toBeGreaterThan(0);
     // a stop the price never reaches changes nothing
-    const far = stopSweep(candles, { lower: b.lower, upper: b.upper, grids: b.grids, mode: b.mode }, H, [0.9], []);
+    const far = stopSweep(candles, { lower: b.lower, upper: b.upper, grids: b.grids, mode: b.mode }, H, currentPrice, [0.9], []);
     const none = far.find((r) => r.margin === null)!;
     const farStop = far.find((r) => r.margin !== null)!;
     expect(farStop.exits).toBe(0);
@@ -136,12 +138,16 @@ describe("optimizeGrid", () => {
     const out = optimizeGrid({ candles, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 0.05 });
     const b = out.best!;
     expect(b.stopLossPct).toBeLessThanOrEqual(0.05 + 1e-9);
-    expect(b.stopLoss).toBeGreaterThan(b.lower); // a 5% cap on a wide range needs a stop inside the range
-    // stopPriceForLoss inverts worstCaseLossPct
-    const p10 = stopPriceForLoss(b.lower, b.upper, b.grids, b.mode, 0.1);
-    expect(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, p10)).toBeCloseTo(0.1, 6);
-    // worst case is monotone: lower stop → bigger loss
-    expect(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, p10 * 0.9)).toBeGreaterThan(0.1);
+    expect(b.stopLoss).toBeLessThan(currentPrice); // never at or above the current price
+    // stopPriceForLoss inverts worstCaseLossPct, from the entry price
+    const p10 = stopPriceForLoss(b.lower, b.upper, b.grids, b.mode, 0.1, currentPrice);
+    expect(p10).toBeLessThan(currentPrice);
+    expect(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, p10, currentPrice)).toBeCloseTo(0.1, 6);
+    // worst case is monotone: lower stop → bigger loss; and a fall from the top is never smaller than from the entry
+    expect(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, p10 * 0.9, currentPrice)).toBeGreaterThan(0.1);
+    expect(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, p10)).toBeGreaterThanOrEqual(0.1 - 1e-9);
+    // at the entry price itself nothing is lost
+    expect(worstCaseLossPct(b.lower, b.upper, b.grids, b.mode, currentPrice, currentPrice)).toBe(0);
   });
 
   it("investment mode: no goal → no sizing, candidates still ranked", () => {
