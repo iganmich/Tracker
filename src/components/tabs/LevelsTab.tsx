@@ -14,7 +14,7 @@ import {
 import { AIBox } from "@/components/AIBox";
 import { ChartFrame } from "@/components/ChartFrame";
 import { ChartTooltip } from "@/components/ChartTooltip";
-import { formatAxisPrice } from "@/components/priceAxis";
+import { formatAxisPrice, priceDomain } from "@/components/priceAxis";
 import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import { callClaude } from "@/lib/claude";
@@ -59,6 +59,8 @@ export function LevelsTab({
       .filter((l) => l.type === "resistance")
       .map((l) => ({ price: l.price, touches: 0, manual: true as const })),
   ];
+  const yDomain = priceDomain([...priceData.map((d) => d.price), ...allSupports.map((l) => l.price), ...allResistances.map((l) => l.price)]);
+
 
   function addLevel() {
     const val = parseFloat(newLevel);
@@ -124,6 +126,7 @@ export function LevelsTab({
               tickLine={false}
             />
             <YAxis
+              domain={yDomain}
               tick={{ fill: C.muted, fontSize: 9 }}
               tickFormatter={(v: number) => `$${formatAxisPrice(v)}`}
               axisLine={false}

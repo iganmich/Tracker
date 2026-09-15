@@ -16,7 +16,7 @@ import { AIBox } from "@/components/AIBox";
 import { BuySignalBadge } from "@/components/BuySignalBadge";
 import { ChartFrame } from "@/components/ChartFrame";
 import { ChartTooltip } from "@/components/ChartTooltip";
-import { formatAxisPrice } from "@/components/priceAxis";
+import { formatAxisPrice, priceDomain } from "@/components/priceAxis";
 import { StatCard } from "@/components/StatCard";
 import { ThresholdControls } from "@/components/ThresholdControls";
 import { useCoin, usePriceFormat } from "@/lib/coin-context";
@@ -121,6 +121,10 @@ export function CyclesTab({
       };
     });
   }, [chartData, buyZones, timeframe]);
+  const yDomain = useMemo(
+    () => priceDomain(enriched.flatMap((d) => [d.price, d.bbUpper ?? null, d.bbLower ?? null])),
+    [enriched],
+  );
 
   const cycleData = useMemo(
     () =>
@@ -274,6 +278,7 @@ export function CyclesTab({
               tickLine={false}
             />
             <YAxis
+              domain={yDomain}
               tick={{ fill: C.muted, fontSize: 9 }}
               tickFormatter={(v: number) => `$${formatAxisPrice(v)}`}
               axisLine={false}

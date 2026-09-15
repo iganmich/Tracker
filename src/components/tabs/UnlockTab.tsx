@@ -14,7 +14,7 @@ import {
 import { AIBox } from "@/components/AIBox";
 import { ChartFrame } from "@/components/ChartFrame";
 import { ChartTooltip } from "@/components/ChartTooltip";
-import { formatAxisPrice } from "@/components/priceAxis";
+import { formatAxisPrice, priceDomain } from "@/components/priceAxis";
 import { StatCard } from "@/components/StatCard";
 import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C, UNLOCK_EVENTS } from "@/lib/constants";
@@ -40,6 +40,7 @@ export function UnlockTab({
   const [busy, setBusy] = useState(false);
 
   const now = new Date();
+  const yDomain = priceDomain(priceData.map((d) => d.price));
   const nextUnlock = UNLOCK_EVENTS.map((e) => ({ ...e, dt: new Date(e.date) }))
     .filter((e) => e.dt >= now)
     .sort((a, b) => a.dt.getTime() - b.dt.getTime())[0];
@@ -114,6 +115,7 @@ export function UnlockTab({
               tickLine={false}
             />
             <YAxis
+              domain={yDomain}
               tick={{ fill: C.muted, fontSize: 9 }}
               tickFormatter={(v: number) => `$${formatAxisPrice(v)}`}
               axisLine={false}
