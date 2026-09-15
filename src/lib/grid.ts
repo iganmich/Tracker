@@ -306,6 +306,8 @@ export interface OptimizeInput {
   rankBy: RankBy;
   minTradesPerDay: number;
   maxLossPct: number;
+  /** Ticker used in warning text (e.g. "MON"). */
+  asset?: string;
 }
 
 export interface Candidate {
@@ -469,6 +471,7 @@ function unique(xs: number[]): number[] {
 
 export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
   const { candles, candleMs, goalUsd, maxInvestment, currentPrice, mode, rankBy } = input;
+  const asset = input.asset ?? "the coin";
   const minTradesPerDay = input.minTradesPerDay > 0 ? input.minTradesPerDay : 0;
   const factor = input.factor > 0 ? input.factor : 1;
   const warnings: string[] = [];
@@ -565,7 +568,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
     if (maxInvestment !== null && maxInvestment / best.grids < MIN_ORDER_USDT) {
       warnings.push(`Investment too small for ${best.grids} grids — Pionex needs at least ${MIN_ORDER_USDT} USDT per grid.`);
     }
-    if ((currentPrice - best.lower) / currentPrice < EDGE_WARN) warnings.push("Current price is within 5% of the lower bound — the bot would start almost fully in MON.");
+    if ((currentPrice - best.lower) / currentPrice < EDGE_WARN) warnings.push(`Current price is within 5% of the lower bound — the bot would start almost fully in ${asset}.`);
     if ((best.upper - currentPrice) / currentPrice < EDGE_WARN) warnings.push("Current price is within 5% of the upper bound — little room to sell before a breakout.");
     return { best, requiredInvestment: null, overBudget: false, achievableMonthly: null, alternatives: bestPerGrids.slice(1), warnings, tested, kept: candidates.length };
   }
@@ -582,7 +585,7 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
       `Over budget: $${goalUsd.toLocaleString()} / month needs $${requiredInvestment.toLocaleString()}, above your $${maxInvestment.toLocaleString()} max. At your max this grid earns about $${Math.round(achievableMonthly ?? 0).toLocaleString()} / month.`,
     );
   }
-  if ((currentPrice - best.lower) / currentPrice < EDGE_WARN) warnings.push("Current price is within 5% of the lower bound — the bot would start almost fully in MON.");
+  if ((currentPrice - best.lower) / currentPrice < EDGE_WARN) warnings.push(`Current price is within 5% of the lower bound — the bot would start almost fully in ${asset}.`);
   if ((best.upper - currentPrice) / currentPrice < EDGE_WARN) warnings.push("Current price is within 5% of the upper bound — little room to sell before a breakout.");
 
   return {

@@ -14,6 +14,8 @@ import {
 import { AIBox } from "@/components/AIBox";
 import { ChartFrame } from "@/components/ChartFrame";
 import { ChartTooltip } from "@/components/ChartTooltip";
+import { formatAxisPrice } from "@/components/priceAxis";
+import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import { callClaude } from "@/lib/claude";
 import { calcSR } from "@/lib/analytics";
@@ -32,6 +34,8 @@ export function LevelsTab({
   loading,
   currentPrice,
 }: LevelsTabProps) {
+  const coin = useCoin();
+  const fmtPrice = usePriceFormat();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [manualLevels, setManualLevels] = useState<ManualLevel[]>([]);
@@ -80,7 +84,7 @@ export function LevelsTab({
       .join(", ");
     try {
       await callClaude(
-        `MON (Monad) crypto. Daily prices: ${ctx}. Current: $${currentPrice?.toFixed(5)}. Auto-detected supports: ${supStr}. Resistances: ${resStr}. Analyze: 1) Strength of each level by touch count? 2) Key support if price drops further? 3) Key resistance to break for bullish move? 4) Is current price near critical level? 5 concise sentences with specific prices.`,
+        `${coin.blurb} crypto. Daily prices: ${ctx}. Current: $${currentPrice?.toFixed(5)}. Auto-detected supports: ${supStr}. Resistances: ${resStr}. Analyze: 1) Strength of each level by touch count? 2) Key support if price drops further? 3) Key resistance to break for bullish move? 4) Is current price near critical level? 5 concise sentences with specific prices.`,
         setText,
       );
     } catch (e) {
@@ -121,7 +125,7 @@ export function LevelsTab({
             />
             <YAxis
               tick={{ fill: C.muted, fontSize: 9 }}
-              tickFormatter={(v: number) => `$${v.toFixed(3)}`}
+              tickFormatter={(v: number) => `$${formatAxisPrice(v)}`}
               axisLine={false}
               tickLine={false}
               width={56}
@@ -246,7 +250,7 @@ export function LevelsTab({
                   className="text-[11px] tabular-nums"
                   style={{ color: l.type === "support" ? C.green : C.red }}
                 >
-                  {l.type === "support" ? "S" : "R"} — ${l.price.toFixed(5)}{" "}
+                  {l.type === "support" ? "S" : "R"} — ${fmtPrice(l.price)}{" "}
                   <span style={{ color: C.muted }}>(manual)</span>
                 </span>
                 <button
@@ -254,7 +258,7 @@ export function LevelsTab({
                   onClick={() =>
                     setManualLevels((p) => p.filter((_, idx) => idx !== i))
                   }
-                  aria-label={`Remove ${l.type} at ${l.price.toFixed(5)}`}
+                  aria-label={`Remove ${l.type} at ${fmtPrice(l.price)}`}
                   className="flex min-h-[44px] min-w-[44px] items-center justify-center text-sm"
                   style={{ color: C.muted, background: "transparent" }}
                 >
@@ -299,7 +303,7 @@ export function LevelsTab({
                 style={{ borderBottom: `1px solid ${C.border}` }}
               >
                 <span className="text-[11px] tabular-nums text-white">
-                  ${l.price.toFixed(5)}
+                  ${fmtPrice(l.price)}
                 </span>
                 <span className="text-[10px]" style={{ color }}>
                   {l.manual ? "manual" : `${l.touches}x`}

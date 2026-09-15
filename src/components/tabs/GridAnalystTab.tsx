@@ -5,6 +5,7 @@ import { CandidateBoard } from "@/components/grid/CandidateBoard";
 import { CandidateTicket } from "@/components/grid/CandidateTicket";
 import { GridChart } from "@/components/grid/GridChart";
 import { GridInputs } from "@/components/grid/GridInputs";
+import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import {
   GRID_WINDOW_DAYS,
@@ -12,7 +13,6 @@ import {
   candlesFromPricePoints,
   fetchCandles,
   type CandleSet,
-  type GridWindow,
 } from "@/lib/candles";
 import { DEFAULT_GRID_SETTINGS, isGridSettings, optimizeGrid, simulateGrid, type GridSettings } from "@/lib/grid";
 import { usePersistentState } from "@/lib/storage";
@@ -26,16 +26,20 @@ interface GridAnalystTabProps {
 const RES_LABEL: Record<number, string> = { 300: "5-minute", 900: "15-minute", 1800: "30-minute", 3600: "1-hour", 86400: "daily" };
 
 export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps) {
+  const coin = useCoin();
+  const fmtPrice = usePriceFormat();
   const [settings, setSettings] = usePersistentState<GridSettings>("mon.grid", DEFAULT_GRID_SETTINGS, isGridSettings);
   const [set, setSet] = useState<CandleSet | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(0);
-  const cacheRef = useRef<Partial<Record<GridWindow, CandleSet>>>({});
+  // One entry per `${coin}:${window}` so switching back and forth is instant.
+  const cacheRef = useRef<Map<string, CandleSet>>(new Map());
 
-  // Fetch per window, cache per session (same pattern as CyclesTab).
+  // Fetch per coin + window, cache per session (same pattern as CyclesTab).
   useEffect(() => {
     const w = settings.window;
-    const cached = cacheRef.current[w];
+    const key = `${coin.id}:${w}`;
+    const cached = cacheRef.current.get(key);
     if (cached) {
       setSet(cached);
       setLoading(false);
@@ -43,10 +47,10 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
     }
     let cancelled = false;
     setLoading(true);
-    fetchCandles(GRID_WINDOW_DAYS[w])
+    fetchCandles(coin.id, GRID_WINDOW_DAYS[w])
       .then((cs) => {
         if (cancelled) return;
-        cacheRef.current[w] = cs;
+        cacheRef.current.set(key, cs);
         setSet(cs);
       })
       .catch(() => {
@@ -66,7 +70,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
     return () => {
       cancelled = true;
     };
-  }, [settings.window, priceData]);
+  }, [coin.id, settings.window, priceData]);
 
   // Reset the selection whenever the inputs or the candle set change. Done as a render-time
   // adjustment rather than an effect (react-hooks/set-state-in-effect).
@@ -93,8 +97,9 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
       rankBy: settings.rankBy,
       minTradesPerDay: settings.minTradesPerDay,
       maxLossPct: settings.maxLossPct,
+      asset: coin.id,
     });
-  }, [set, candleMs, price, settings.goalUsd, settings.maxInvestment, settings.mode, settings.rankBy, settings.minTradesPerDay, settings.maxLossPct, factor]);
+  }, [set, candleMs, price, settings.goalUsd, settings.maxInvestment, settings.mode, settings.rankBy, settings.minTradesPerDay, settings.maxLossPct, factor, coin.id]);
 
   const candidates = useMemo(() => (out?.best ? [out.best, ...out.alternatives] : []), [out]);
   const selectedIdx = Math.min(selected, Math.max(0, candidates.length - 1));
@@ -120,7 +125,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
     // With no candidate the board already shows the optimizer's explanation; don't repeat it here.
     const w = chosen ? [...(out?.warnings ?? [])] : [];
     if (set?.source === "fallback") w.unshift("Approximate: using daily CoinGecko prices without intraday range — the candle service is unavailable. Fills are under-counted heavily.");
-    else if (set && factor !== 1) w.unshift(`${RES_LABEL[set.resolutionSec]} candles capture about ${Math.round(100 / factor)}% of live fills — yields, profit and investment are corrected ×${factor.toFixed(2)}. Calibrated on one live-bot day.`);
+    else if (set && factor !== 1) w.unshift(`${RES_LABEL[set.resolutionSec]} candles capture about ${Math.round(100 / factor)}% of live fills — yields, profit and investment are corrected ×${factor.toFixed(2)}. Calibrated on one live-bot day (measured on MON).`);
     return w;
   }, [out, set, factor, chosen]);
 
@@ -129,9 +134,9 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
   const caption = (
     <span className="flex flex-wrap gap-x-3 gap-y-1">
       <span>Price · {set ? RES_LABEL[set.resolutionSec] : "…"} candles</span>
-      {chosen && <span style={{ color: C.blue }}>▬ range {chosen.lower.toFixed(5)} – {chosen.upper.toFixed(5)}</span>}
+      {chosen && <span style={{ color: C.blue }}>▬ range {fmtPrice(chosen.lower)} – {fmtPrice(chosen.upper)}</span>}
       {chosen && <span style={{ color: C.dim }}>┈ {chosen.grids} grids</span>}
-      {price != null && <span className="text-white">— now {price.toFixed(5)}</span>}
+      {price != null && <span className="text-white">— now {fmtPrice(price)}</span>}
     </span>
   );
 
@@ -168,7 +173,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
       <p className="mt-1 text-center text-[11px]" style={{ color: C.dim }}>
         {set?.source === "fallback"
           ? "Backtest on CoinGecko daily prices (fallback — candle service unavailable)"
-          : `Backtest on Pionex MON_USDT_PERP ${set ? RES_LABEL[set.resolutionSec] : ""} candles · ${set?.source === "db" ? "local db" : "live"}`}
+          : `Backtest on Pionex ${coin.pionexSymbol} ${set ? RES_LABEL[set.resolutionSec] : ""} candles · ${set?.source === "db" ? "local db" : "live"}`}
         {" · fee 0.05%/side · calibrated on one live-bot day · past range ≠ future range"}
       </p>
     </div>

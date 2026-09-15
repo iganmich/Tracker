@@ -1,3 +1,4 @@
+import type { CoinId } from "./coins";
 import type { PricePoint } from "./types";
 
 export interface Candle {
@@ -23,9 +24,6 @@ export const GRID_WINDOW_LABEL: Record<GridWindow, string> = {
   "6m": "6M",
   max: "MAX",
 };
-
-/** MON launch: 2025-11-24 15:00 UTC (first Pionex/KuCoin trade). */
-export const MON_LAUNCH_MS = Date.UTC(2025, 10, 24, 15);
 
 /**
  * Finest Pionex resolution whose 10,000-candle history covers the window
@@ -62,6 +60,9 @@ export interface CandleSet {
 }
 
 interface CandleResponse {
+  /** Echoed back by the route; the client already knows which coin it asked for. */
+  coin?: CoinId;
+  symbol?: string;
   resolutionSec: number;
   source: "db" | "live";
   candles: number[][];
@@ -71,8 +72,8 @@ export function expandCandles(rows: number[][]): Candle[] {
   return rows.map(([time, open, high, low, close]) => ({ time, open, high, low, close }));
 }
 
-export async function fetchCandles(days: number): Promise<CandleSet> {
-  const res = await fetch(`/api/candles?days=${days}`);
+export async function fetchCandles(coinId: CoinId, days: number): Promise<CandleSet> {
+  const res = await fetch(`/api/candles?coin=${coinId}&days=${days}`);
   if (!res.ok) throw new Error(`candles ${res.status}`);
   const json = (await res.json()) as CandleResponse;
   return {

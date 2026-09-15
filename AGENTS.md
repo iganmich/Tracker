@@ -8,6 +8,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## What this is
 
+**Multi-coin (since 2026-09-15).** The dashboard tracks one coin at a time — MON, XRP, SOL or BTC — chosen with the pills in the header and persisted under `mon.coin`. Everything coin-specific comes from the registry in [src/lib/coins.ts](src/lib/coins.ts) (`COINS`: CoinGecko id, Pionex symbol, launch date, price decimals, `hasUnlocks`, prompt blurb) and reaches components through `useCoin()` / `usePriceFormat()` in [src/lib/coin-context.tsx](src/lib/coin-context.tsx). Never hard-code a symbol or `toFixed(5)`; add a coin by adding a registry entry. The Unlock tab only renders for coins with `hasUnlocks`.
+
+**Candle history is loaded once, then topped up.** `/api/candles?coin=XRP&days=N` goes through `ensureCandles()` in [src/lib/server/candle-store.ts](src/lib/server/candle-store.ts): with `MON_DATABASE_URL` set, the first request for a coin/resolution backfills from Pionex into `mon_candles` (up to Pionex's 10,000-candle cap per interval, ≈ 9 s), and later requests only fetch candles newer than the last stored one (when the newest is > 2 candles old). Concurrent first requests share one backfill. Without a database the route pages Pionex live. Older-than-cap history only accumulates if the ingest runs regularly (`npm run candles:ingest -- --coin SOL`).
+
+
 Single-page client dashboard for tracking MON (Monad). Five tabs (Unlock, Cycles, Levels, Backtest, Grid Analyst) all driven from one shared `priceData` array fetched from CoinGecko, with a mock-data fallback. The Grid Analyst tab additionally fetches its own candle data. No database, no auth — read-only public dashboard.
 
 ## Architecture
@@ -58,7 +63,7 @@ MON-tracker has its own Docker Postgres for MON/USDT candle history, used by bac
 
 - `npm run db:local:up` / `db:local:down` / `db:local:psql` — manage the container. The table is created on first boot from [infra/local-db/init.sql](infra/local-db/init.sql).
 - `npm run candles:ingest` — pulls **Pionex `MON_USDT_PERP`** (1min/5min/15min/30min/1hour/4hour/1day) and **KuCoin `MON-USDT`** (1min/5min/15min/1hour/1day) candles and upserts into `mon_candles`. Incremental: resumes from the last stored candle, so **run it regularly** — Pionex only serves the last 10,000 candles per interval (5-min ≈ 35 days) and the local DB is what keeps older fine-grained history. `-- --source pionex`, `-- --res 5min`, `-- --full`. Refuses non-localhost hosts.
-- `MON_DATABASE_URL=postgresql://mon:localdev@localhost:5460/mon` in `.env.local` points the app at it. Unset (as on Coolify today) → server routes fall back to live Pionex fetches (`MON_USDT_PERP`, paginated).
+- `MON_DATABASE_URL=postgresql://mon:localdev@localhost:5460/mon` in `.env.local` points the app at it. `mon_candles.volume` is NOT NULL — the store writes Pionex volume; turnover stays NULL for store-written rows. Unset (as on Coolify today) → server routes fall back to live Pionex fetches (`MON_USDT_PERP`, paginated).
 - Table `mon_candles (exchange, symbol, resolution_sec, time, open, high, low, close, volume, turnover, ingested_at)`, PK `(exchange, symbol, resolution_sec, time)`. KuCoin omits minutes with zero trades, so 1min has gaps; consumers must not assume a fixed stride.
 - **Use Pionex perp candles for backtests, not KuCoin.** Calibrated against the user's live Pionex grid bot: 5-min perp candles reproduce 85 of 83 real rounds; KuCoin spot is so thin (most 1-min candles flat) it captures only ~50 %. KuCoin is kept for deep history only. Pionex's public API has no MON spot pair; Binance/Bybit are geo-blocked from the dev machine; Gate caps at 10,000 points; CoinGecko is daily-only beyond 90 days.
 - On this dev machine IPv6 is broken and Node `fetch` hangs unless family auto-selection is off; the `candles:ingest` script sets `NODE_OPTIONS='--no-network-family-autoselection --dns-result-order=ipv4first'` for that reason. `next dev` routes that call KuCoin live need the same prefix here.

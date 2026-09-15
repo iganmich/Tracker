@@ -1,21 +1,23 @@
 "use client";
 
 import { C, TABS } from "@/lib/constants";
-import type { TabId } from "@/lib/types";
+import type { TabDef, TabId } from "@/lib/types";
 
 interface TabBarProps {
   active: TabId;
   onChange: (id: TabId) => void;
+  /** Defaults to every tab; the page narrows it for coins without an unlock schedule. */
+  tabs?: TabDef[];
 }
 
-export function TabBar({ active, onChange }: TabBarProps) {
+export function TabBar({ active, onChange, tabs = TABS }: TabBarProps) {
   return (
     <nav
       role="tablist"
       aria-label="Dashboard sections"
       className="mb-4 flex gap-1.5 overflow-x-auto sm:mb-5"
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const selected = active === tab.id;
         return (
           <button

@@ -1,9 +1,9 @@
 "use client";
 
+import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import type { Candidate, RankBy } from "@/lib/grid";
 
-export const fmtPrice = (n: number) => n.toFixed(5);
 export const fmtUsd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 export const fmtPct = (n: number, d = 1) => `${n.toFixed(d)}%`;
 
@@ -33,6 +33,8 @@ function Bar({ fraction, color, marker }: { fraction: number; color: string; mar
 }
 
 export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInvestment, rankBy, currentPrice, tested, kept, loading, emptyMessage }: CandidateBoardProps) {
+  const coin = useCoin();
+  const fmtPrice = usePriceFormat();
   const topYield = candidates[0]?.rankYield ?? 1;
   const best = candidates[0];
   const investMode = goalUsd === null;
@@ -102,7 +104,7 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
                 {fmtPrice(c.lower)} – {fmtPrice(c.upper)}
                 <span className="block text-[11px]" style={{ color: C.dim }}>
                   {pos !== undefined
-                    ? `now ${Math.round(pos * 100)}% up the range · starts ≈${Math.round((1 - pos) * 100)}% MON / ${Math.round(pos * 100)}% USDT`
+                    ? `now ${Math.round(pos * 100)}% up the range · starts ≈${Math.round((1 - pos) * 100)}% ${coin.id} / ${Math.round(pos * 100)}% USDT`
                     : "range"}
                 </span>
                 <Bar fraction={1} color={`${C.blue}59`} marker={pos} />

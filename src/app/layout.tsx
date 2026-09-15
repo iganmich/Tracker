@@ -9,8 +9,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MON Tracker",
-  description: "Monad price intelligence — unlocks, cycles, levels, backtests.",
+  title: "Coin Tracker",
+  description:
+    "Price intelligence — cycles, levels, backtests, grid analyst. MON, XRP, SOL, BTC.",
 };
 
 export default function RootLayout({

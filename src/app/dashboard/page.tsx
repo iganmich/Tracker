@@ -8,7 +8,9 @@ import { CyclesTab } from "@/components/tabs/CyclesTab";
 import { GridAnalystTab } from "@/components/tabs/GridAnalystTab";
 import { LevelsTab } from "@/components/tabs/LevelsTab";
 import { UnlockTab } from "@/components/tabs/UnlockTab";
-import { C } from "@/lib/constants";
+import { CoinProvider } from "@/lib/coin-context";
+import { COINS, DEFAULT_COIN, isCoinId, type CoinId } from "@/lib/coins";
+import { C, TABS } from "@/lib/constants";
 import {
   computePriceMeta,
   fetchPriceData,
@@ -35,6 +37,12 @@ const isThresholds = (v: unknown): v is BuyZoneOptions =>
   );
 
 export default function DashboardPage() {
+  const [coinId, setCoinId] = usePersistentState<CoinId>(
+    "mon.coin",
+    DEFAULT_COIN,
+    isCoinId,
+  );
+  const coin = COINS[coinId];
   const [activeTab, setActiveTab] = usePersistentState<TabId>(
     "mon.activeTab",
     "unlock",
@@ -52,11 +60,21 @@ export default function DashboardPage() {
     [setThresholdsRaw],
   );
 
+  // Switching coin clears the previous coin's series so the tabs show skeletons rather
+  // than stale data. Done as a render-time adjustment, not an effect
+  // (react-hooks/set-state-in-effect); the fetch below then refills it.
+  const [fetchedCoin, setFetchedCoin] = useState(coinId);
+  if (fetchedCoin !== coinId) {
+    setFetchedCoin(coinId);
+    setPriceData([]);
+    setLoading(true);
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await fetchPriceData();
+        const data = await fetchPriceData(coin);
         if (!cancelled) setPriceData(data);
       } catch {
         if (!cancelled) setPriceData(generateMockData());
@@ -67,57 +85,70 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [coin]);
 
   const { currentPrice, priceChange } = useMemo(
     () => computePriceMeta(priceData),
     [priceData],
   );
 
-  return (
-    <main
-      className="mx-auto min-h-dvh w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8"
-      style={{ color: C.text, fontFamily: C.font }}
-    >
-      <DashboardHeader currentPrice={currentPrice} priceChange={priceChange} />
-      <TabBar active={activeTab} onChange={setActiveTab} />
+  // Coins without an unlock schedule don't get the Unlock tab; a persisted "unlock"
+  // selection falls back to Cycles for as long as such a coin is selected.
+  const tabs = useMemo(
+    () => (coin.hasUnlocks ? TABS : TABS.filter((t) => t.id !== "unlock")),
+    [coin.hasUnlocks],
+  );
+  const shownTab =
+    activeTab === "unlock" && !coin.hasUnlocks ? "cycles" : activeTab;
 
-      {activeTab === "unlock" && (
-        <UnlockTab
-          priceData={priceData}
-          loading={loading}
+  return (
+    <CoinProvider coin={coin}>
+      <main
+        className="mx-auto min-h-dvh w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8"
+        style={{ color: C.text, fontFamily: C.font }}
+      >
+        <DashboardHeader
+          coin={coin}
+          onCoinChange={setCoinId}
           currentPrice={currentPrice}
           priceChange={priceChange}
         />
-      )}
-      {activeTab === "cycles" && (
-        <CyclesTab
-          priceData={priceData}
-          loading={loading}
-          thresholds={thresholds}
-          onThresholdsChange={setThresholds}
-        />
-      )}
-      {activeTab === "levels" && (
-        <LevelsTab
-          priceData={priceData}
-          loading={loading}
-          currentPrice={currentPrice}
-        />
-      )}
-      {activeTab === "backtest" && (
-        <BacktestTab priceData={priceData} thresholds={thresholds} />
-      )}
-      {activeTab === "grid" && (
-        <GridAnalystTab priceData={priceData} currentPrice={currentPrice} />
-      )}
+        <TabBar active={shownTab} onChange={setActiveTab} tabs={tabs} />
 
-      <p
-        className="mt-5 text-center text-[9px]"
-        style={{ color: "#333" }}
-      >
-        Data: CoinGecko · Not financial advice
-      </p>
-    </main>
+        {shownTab === "unlock" && (
+          <UnlockTab
+            priceData={priceData}
+            loading={loading}
+            currentPrice={currentPrice}
+            priceChange={priceChange}
+          />
+        )}
+        {shownTab === "cycles" && (
+          <CyclesTab
+            priceData={priceData}
+            loading={loading}
+            thresholds={thresholds}
+            onThresholdsChange={setThresholds}
+          />
+        )}
+        {shownTab === "levels" && (
+          <LevelsTab
+            priceData={priceData}
+            loading={loading}
+            currentPrice={currentPrice}
+          />
+        )}
+        {shownTab === "backtest" && (
+          <BacktestTab priceData={priceData} thresholds={thresholds} />
+        )}
+        {shownTab === "grid" && (
+          <GridAnalystTab priceData={priceData} currentPrice={currentPrice} />
+        )}
+
+        <p className="mt-5 text-center text-[9px]" style={{ color: "#333" }}>
+          Data: CoinGecko · Pionex {coin.pionexSymbol} · Not financial advice
+        </p>
+      </main>
+    </CoinProvider>
   );
 }

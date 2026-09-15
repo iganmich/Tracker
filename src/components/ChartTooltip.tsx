@@ -1,5 +1,6 @@
 "use client";
 
+import { usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import type { EnrichedPricePoint } from "@/lib/types";
 
@@ -15,6 +16,7 @@ interface ChartTooltipProps {
 }
 
 export function ChartTooltip({ active, payload, label }: ChartTooltipProps) {
+  const fmtPrice = usePriceFormat();
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
   const price = d?.price;
@@ -33,12 +35,12 @@ export function ChartTooltip({ active, payload, label }: ChartTooltipProps) {
       </p>
       {typeof price === "number" && (
         <p className="m-0">
-          Price: <b className="text-white">${price.toFixed(5)}</b>
+          Price: <b className="text-white">${fmtPrice(price)}</b>
         </p>
       )}
       {typeof d?.bbUpper === "number" && typeof d?.bbLower === "number" && (
         <p className="m-0 mt-0.5" style={{ color: C.purple }}>
-          BB: ${d.bbLower.toFixed(5)} – ${d.bbUpper.toFixed(5)}
+          BB: ${fmtPrice(d.bbLower)} – ${fmtPrice(d.bbUpper)}
         </p>
       )}
       {d?.unlock && (

@@ -1,8 +1,9 @@
 "use client";
 
+import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import type { Candidate, GridResult } from "@/lib/grid";
-import { fmtPct, fmtPrice, fmtUsd } from "./CandidateBoard";
+import { fmtPct, fmtUsd } from "./CandidateBoard";
 
 interface CandidateTicketProps {
   rank: number; // 1-based
@@ -28,6 +29,8 @@ function Field({ label, unit, value, sub }: { label: string; unit?: string; valu
 }
 
 export function CandidateTicket({ rank, candidate, investment, sized, warnings }: CandidateTicketProps) {
+  const coin = useCoin();
+  const fmtPrice = usePriceFormat();
   return (
     <section
       className="mb-3 rounded-xl p-3.5"
@@ -38,7 +41,7 @@ export function CandidateTicket({ rank, candidate, investment, sized, warnings }
         <h3 className="m-0 text-[11px] font-bold uppercase tracking-[1px]" style={{ color: C.green }}>
           {candidate ? `Candidate ${rank} · what to type into Pionex` : "What to type into Pionex"}
         </h3>
-        <span className="text-[11px]" style={{ color: C.dim }}>spot grid · MON/USDT · fields in Pionex order</span>
+        <span className="text-[11px]" style={{ color: C.dim }}>{`spot grid · ${coin.id}/USDT · fields in Pionex order`}</span>
       </div>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">

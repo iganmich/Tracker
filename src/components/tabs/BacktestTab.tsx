@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { StatCard } from "@/components/StatCard";
+import { usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import { detectBuyZones } from "@/lib/analytics";
 import type { BuyZone, BuyZoneOptions, PricePoint } from "@/lib/types";
@@ -30,6 +31,7 @@ function holdDays(z: BuyZone) {
 }
 
 export function BacktestTab({ priceData, thresholds }: BacktestTabProps) {
+  const fmtPrice = usePriceFormat();
   const summary = useMemo<Summary>(() => {
     const zones = detectBuyZones(priceData, thresholds);
     if (!zones.length) {
@@ -163,10 +165,10 @@ export function BacktestTab({ priceData, thresholds }: BacktestTabProps) {
                           {cycleNum}
                         </td>
                         <td className="px-3 py-2">{z.date}</td>
-                        <td className="px-3 py-2">${z.buyZone.toFixed(5)}</td>
+                        <td className="px-3 py-2">${fmtPrice(z.buyZone)}</td>
                         <td className="px-3 py-2">{z.sellDate}</td>
                         <td className="px-3 py-2">
-                          ${z.sellPrice.toFixed(5)}
+                          ${fmtPrice(z.sellPrice)}
                         </td>
                         <td className="px-3 py-2" style={{ color: C.muted }}>
                           {holdDays(z)}d

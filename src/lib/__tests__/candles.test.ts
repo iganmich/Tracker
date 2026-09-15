@@ -53,7 +53,7 @@ describe("candles helpers", () => {
     expect(downsample(rows, 1)).toEqual([rows[999]]);
   });
 
-  it("fetchCandles hits /api/candles?days=N, rejects on a non-OK response and expands rows on success", async () => {
+  it("fetchCandles hits /api/candles?coin=C&days=N, rejects on a non-OK response and expands rows on success", async () => {
     const g = globalThis as { fetch?: typeof fetch };
     const original = g.fetch;
     const calls: string[] = [];
@@ -62,10 +62,10 @@ describe("candles helpers", () => {
         calls.push(url);
         return { ok: false, status: 502 };
       }) as unknown as typeof fetch;
-      await expect(fetchCandles(30)).rejects.toThrow("candles 502");
-      expect(calls[0]).toBe("/api/candles?days=30");
+      await expect(fetchCandles("MON", 30)).rejects.toThrow("candles 502");
+      expect(calls[0]).toBe("/api/candles?coin=MON&days=30");
       g.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ resolutionSec: 300, source: "db", candles: [[1, 2, 3, 0.5, 2.5]] }) })) as unknown as typeof fetch;
-      await expect(fetchCandles(30)).resolves.toEqual({ resolutionSec: 300, source: "db", candles: [{ time: 1, open: 2, high: 3, low: 0.5, close: 2.5 }] });
+      await expect(fetchCandles("MON", 30)).resolves.toEqual({ resolutionSec: 300, source: "db", candles: [{ time: 1, open: 2, high: 3, low: 0.5, close: 2.5 }] });
     } finally {
       g.fetch = original;
     }

@@ -16,8 +16,10 @@ import { AIBox } from "@/components/AIBox";
 import { BuySignalBadge } from "@/components/BuySignalBadge";
 import { ChartFrame } from "@/components/ChartFrame";
 import { ChartTooltip } from "@/components/ChartTooltip";
+import { formatAxisPrice } from "@/components/priceAxis";
 import { StatCard } from "@/components/StatCard";
 import { ThresholdControls } from "@/components/ThresholdControls";
+import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import { callClaude } from "@/lib/claude";
 import {
@@ -48,6 +50,8 @@ export function CyclesTab({
   thresholds,
   onThresholdsChange,
 }: CyclesTabProps) {
+  const coin = useCoin();
+  const fmtPrice = usePriceFormat();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [showBollinger, setShowBollinger] = useState(true);
@@ -55,6 +59,7 @@ export function CyclesTab({
   const [chartData, setChartData] = useState<PricePoint[]>(priceData);
   const [chartLoading, setChartLoading] = useState(false);
   const cacheRef = useRef<Partial<Record<Timeframe, PricePoint[]>>>({});
+  const coinRef = useRef(coin.id);
 
   useEffect(() => {
     cacheRef.current["1d"] = priceData;
@@ -62,6 +67,11 @@ export function CyclesTab({
   }, [priceData, timeframe]);
 
   useEffect(() => {
+    // Cached series belong to the coin they were fetched for.
+    if (coinRef.current !== coin.id) {
+      coinRef.current = coin.id;
+      cacheRef.current = {};
+    }
     if (timeframe === "1d") return;
     const cached = cacheRef.current[timeframe];
     if (cached) {
@@ -70,7 +80,7 @@ export function CyclesTab({
     }
     let cancelled = false;
     setChartLoading(true);
-    fetchPriceDataForTimeframe(timeframe)
+    fetchPriceDataForTimeframe(timeframe, coin)
       .then((data) => {
         if (cancelled) return;
         cacheRef.current[timeframe] = data;
@@ -85,7 +95,7 @@ export function CyclesTab({
     return () => {
       cancelled = true;
     };
-  }, [timeframe]);
+  }, [timeframe, coin]);
 
   const buyZones = useMemo(
     () => detectBuyZones(priceData, thresholds),
@@ -156,7 +166,7 @@ export function CyclesTab({
       .join("; ");
     try {
       await callClaude(
-        `Crypto technical analyst for MON (Monad, launched Nov 2025). Daily prices: ${ctx}. Past buy zones: ${detected}. Projected future cycles (algorithmic): ${proj}. Average cycle gap: ${avgGap} days, avg drop: ${avgDropStr}%. Analyze: 1) How reliable is this cycle pattern? 2) What conditions would invalidate the next projected buy? 3) Are the sell targets realistic based on past pumps? 4) Any risk factors to watch? 5 concise sentences with specific prices.`,
+        `Crypto technical analyst for ${coin.blurb}. Daily prices: ${ctx}. Past buy zones: ${detected}. Projected future cycles (algorithmic): ${proj}. Average cycle gap: ${avgGap} days, avg drop: ${avgDropStr}%. Analyze: 1) How reliable is this cycle pattern? 2) What conditions would invalidate the next projected buy? 3) Are the sell targets realistic based on past pumps? 4) Any risk factors to watch? 5 concise sentences with specific prices.`,
         setText,
       );
     } catch (e) {
@@ -265,7 +275,7 @@ export function CyclesTab({
             />
             <YAxis
               tick={{ fill: C.muted, fontSize: 9 }}
-              tickFormatter={(v: number) => `$${v.toFixed(3)}`}
+              tickFormatter={(v: number) => `$${formatAxisPrice(v)}`}
               axisLine={false}
               tickLine={false}
               width={56}
@@ -484,7 +494,7 @@ export function CyclesTab({
                     className="m-0 text-[24px] font-extrabold leading-none tabular-nums"
                     style={{ color: C.green }}
                   >
-                    ${p.estBuyPrice.toFixed(5)}
+                    ${fmtPrice(p.estBuyPrice)}
                   </p>
                   <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <span
@@ -497,7 +507,7 @@ export function CyclesTab({
                       className="text-base font-semibold tabular-nums"
                       style={{ color: C.green }}
                     >
-                      ${buyStop.toFixed(5)}
+                      ${fmtPrice(buyStop)}
                     </span>
                     <span
                       className="ml-auto text-[10px] tracking-[0.5px]"
@@ -563,7 +573,7 @@ export function CyclesTab({
                     className="m-0 text-[24px] font-extrabold leading-none tabular-nums"
                     style={{ color: C.red }}
                   >
-                    ${p.estSellPrice.toFixed(5)}
+                    ${fmtPrice(p.estSellPrice)}
                   </p>
                   <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <span
@@ -576,7 +586,7 @@ export function CyclesTab({
                       className="text-base font-semibold tabular-nums"
                       style={{ color: C.red }}
                     >
-                      ${sellStop.toFixed(5)}
+                      ${fmtPrice(sellStop)}
                     </span>
                     <span
                       className="ml-auto text-[10px] tracking-[0.5px]"
@@ -665,7 +675,7 @@ export function CyclesTab({
                         className="m-0 text-[10px] tabular-nums"
                         style={{ color: C.green }}
                       >
-                        ${z.buyZone.toFixed(5)}
+                        ${fmtPrice(z.buyZone)}
                       </p>
                     </div>
                     <div className="flex items-center px-1.5">
@@ -684,7 +694,7 @@ export function CyclesTab({
                         className="m-0 text-[10px] tabular-nums"
                         style={{ color: C.red }}
                       >
-                        ${z.sellPrice?.toFixed(5) ?? "—"}
+                        {z.sellPrice != null ? `$${fmtPrice(z.sellPrice)}` : "—"}
                       </p>
                     </div>
                   </div>

@@ -14,7 +14,9 @@ import {
 import { AIBox } from "@/components/AIBox";
 import { ChartFrame } from "@/components/ChartFrame";
 import { ChartTooltip } from "@/components/ChartTooltip";
+import { formatAxisPrice } from "@/components/priceAxis";
 import { StatCard } from "@/components/StatCard";
+import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C, UNLOCK_EVENTS } from "@/lib/constants";
 import { callClaude } from "@/lib/claude";
 import type { PricePoint } from "@/lib/types";
@@ -32,6 +34,8 @@ export function UnlockTab({
   currentPrice,
   priceChange,
 }: UnlockTabProps) {
+  const coin = useCoin();
+  const fmtPrice = usePriceFormat();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -52,7 +56,7 @@ export function UnlockTab({
       .join(",");
     try {
       await callClaude(
-        `Crypto analyst for MON (Monad). Daily prices: ${ctx}. Unlock dates: ${UNLOCK_EVENTS.map((e) => e.date).join(",")}. Monthly validator unlocks ~170M MON on 24th each month. Is there a price drop pattern 3-5 days before/after the 24th? Quantify average drop % and recovery time. 4-5 sentences, data-driven.`,
+        `Crypto analyst for ${coin.blurb}. Daily prices: ${ctx}. Unlock dates: ${UNLOCK_EVENTS.map((e) => e.date).join(",")}. Monthly validator unlocks ~170M MON on 24th each month. Is there a price drop pattern 3-5 days before/after the 24th? Quantify average drop % and recovery time. 4-5 sentences, data-driven.`,
         setText,
       );
     } catch (e) {
@@ -66,7 +70,7 @@ export function UnlockTab({
       <div className="mb-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         <StatCard
           label="Current Price"
-          value={currentPrice != null ? `$${currentPrice.toFixed(5)}` : "—"}
+          value={currentPrice != null ? `$${fmtPrice(currentPrice)}` : "—"}
           sub={
             priceChange != null
               ? `${priceChange >= 0 ? "▲" : "▼"} ${Math.abs(priceChange).toFixed(1)}% 7d`
@@ -111,7 +115,7 @@ export function UnlockTab({
             />
             <YAxis
               tick={{ fill: C.muted, fontSize: 9 }}
-              tickFormatter={(v: number) => `$${v.toFixed(3)}`}
+              tickFormatter={(v: number) => `$${formatAxisPrice(v)}`}
               axisLine={false}
               tickLine={false}
               width={56}

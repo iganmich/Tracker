@@ -1,8 +1,10 @@
 # MON Tracker
 
-Price intelligence dashboard for **MON (Monad)** — unlock tracker, investment cycle detection, support & resistance levels, and a sanity-check backtest. Live at [tracker.xamadu.com](https://tracker.xamadu.com).
+Price intelligence dashboard for **MON (Monad), XRP, SOL and BTC** (switch coins in the header) — unlock tracker, investment cycle detection, support & resistance levels, and a sanity-check backtest. Live at [tracker.xamadu.com](https://tracker.xamadu.com).
 
 ## Features
+
+- **Coin selector** — MON, XRP, SOL, BTC. Candle history for a coin is pulled from Pionex into the local database the first time it is requested and only topped up afterwards.
 
 - **Unlock Tracker** — daily price chart with monthly validator-unlock markers (24th of each month), full unlock schedule, and AI-driven pattern analysis
 - **Investment Cycles** — algorithmic detection of past pump → dip → recovery cycles, projection of upcoming buy/sell windows, and a **Buy Signal Score (0-100)** combining time/price/pump/momentum factors with a price-proximity meter

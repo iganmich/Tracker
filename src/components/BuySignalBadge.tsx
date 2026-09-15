@@ -1,5 +1,6 @@
 "use client";
 
+import { usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import type { BuySignalScore } from "@/lib/types";
 
@@ -54,6 +55,7 @@ function FactorBar({
 }
 
 function ProximityMeter({ signal }: { signal: BuySignalScore }) {
+  const fmtPrice = usePriceFormat();
   const { currentPrice, projectedBuyPrice, recentHigh } = signal;
   const lo = Math.min(projectedBuyPrice, currentPrice) * 0.97;
   const hi = Math.max(recentHigh, currentPrice) * 1.02;
@@ -116,9 +118,9 @@ function ProximityMeter({ signal }: { signal: BuySignalScore }) {
         />
       </div>
       <div className="mt-1 flex justify-between text-[9px] tabular-nums" style={{ color: C.muted }}>
-        <span style={{ color: C.green }}>buy ${projectedBuyPrice.toFixed(5)}</span>
-        <span className="text-white">now ${currentPrice.toFixed(5)}</span>
-        <span style={{ color: C.red }}>20d high ${recentHigh.toFixed(5)}</span>
+        <span style={{ color: C.green }}>buy ${fmtPrice(projectedBuyPrice)}</span>
+        <span className="text-white">now ${fmtPrice(currentPrice)}</span>
+        <span style={{ color: C.red }}>20d high ${fmtPrice(recentHigh)}</span>
       </div>
     </div>
   );
