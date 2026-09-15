@@ -8,7 +8,17 @@ export async function callClaude(
     body: JSON.stringify({ prompt }),
   });
   if (!response.ok || !response.body) {
-    throw new Error(`Claude proxy error: ${response.status}`);
+    let detail = "";
+    try {
+      const j = (await response.json()) as { error?: string };
+      if (j.error) detail = j.error;
+    } catch {
+      /* not JSON */
+    }
+    if (detail.includes("ANTHROPIC_API_KEY")) {
+      throw new Error("AI analysis is off: add ANTHROPIC_API_KEY to .env.local (locally) or the Coolify env (production) and restart.");
+    }
+    throw new Error(`Claude proxy error: ${response.status}${detail ? ` — ${detail}` : ""}`);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
