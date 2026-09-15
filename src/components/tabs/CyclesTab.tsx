@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -20,15 +21,19 @@ import { ThresholdControls } from "@/components/ThresholdControls";
 import { C } from "@/lib/constants";
 import { callClaude } from "@/lib/claude";
 import {
+  computeBollingerBands,
   computeBuySignal,
   detectBuyZones,
   projectFutureCycles,
 } from "@/lib/analytics";
+import { fetchPriceDataForTimeframe, type Timeframe } from "@/lib/prices";
 import type {
   BuyZoneOptions,
   EnrichedPricePoint,
   PricePoint,
 } from "@/lib/types";
+
+const TIMEFRAMES: Timeframe[] = ["5m", "1h", "4h", "1d"];
 
 interface CyclesTabProps {
   priceData: PricePoint[];
@@ -45,46 +50,67 @@ export function CyclesTab({
 }: CyclesTabProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showBollinger, setShowBollinger] = useState(true);
+  const [timeframe, setTimeframe] = useState<Timeframe>("1d");
+  const [chartData, setChartData] = useState<PricePoint[]>(priceData);
+  const [chartLoading, setChartLoading] = useState(false);
+  const cacheRef = useRef<Partial<Record<Timeframe, PricePoint[]>>>({});
+
+  useEffect(() => {
+    cacheRef.current["1d"] = priceData;
+    if (timeframe === "1d") setChartData(priceData);
+  }, [priceData, timeframe]);
+
+  useEffect(() => {
+    if (timeframe === "1d") return;
+    const cached = cacheRef.current[timeframe];
+    if (cached) {
+      setChartData(cached);
+      return;
+    }
+    let cancelled = false;
+    setChartLoading(true);
+    fetchPriceDataForTimeframe(timeframe)
+      .then((data) => {
+        if (cancelled) return;
+        cacheRef.current[timeframe] = data;
+        setChartData(data);
+      })
+      .catch(() => {
+        if (!cancelled) setChartData([]);
+      })
+      .finally(() => {
+        if (!cancelled) setChartLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [timeframe]);
 
   const buyZones = useMemo(
     () => detectBuyZones(priceData, thresholds),
     [priceData, thresholds],
   );
 
-  const enriched: EnrichedPricePoint[] = useMemo(
-    () =>
-      priceData.map((d) => {
-        const z = buyZones.find((b) => b.date === d.date);
-        return {
-          ...d,
-          ...(z ?? {}),
-          isBuyZone: !!z,
-        };
-      }),
-    [priceData, buyZones],
-  );
-
-  const data4h = useMemo(() => {
-    const out: { displayDate: string; price: number }[] = [];
-    for (let i = 0; i < priceData.length - 1; i++) {
-      const cur = priceData[i];
-      const nxt = priceData[i + 1];
-      for (let h = 0; h < 6; h++) {
-        const t = h / 6;
-        out.push({
-          displayDate: h === 0 ? cur.displayDate : "",
-          price: parseFloat(
-            (
-              cur.price +
-              (nxt.price - cur.price) * t +
-              (Math.random() - 0.5) * 0.0012
-            ).toFixed(6),
-          ),
-        });
-      }
-    }
-    return out;
-  }, [priceData]);
+  const enriched: EnrichedPricePoint[] = useMemo(() => {
+    const bands = computeBollingerBands(chartData, 20, 2);
+    const isDaily = timeframe === "1d";
+    return chartData.map((d, i) => {
+      const z = isDaily ? buyZones.find((b) => b.date === d.date) : undefined;
+      const b = bands[i];
+      const range: [number, number] | null =
+        b.lower != null && b.upper != null ? [b.lower, b.upper] : null;
+      return {
+        ...d,
+        ...(z ?? {}),
+        isBuyZone: !!z,
+        bbMiddle: b.middle,
+        bbUpper: b.upper,
+        bbLower: b.lower,
+        bbRange: range,
+      };
+    });
+  }, [chartData, buyZones, timeframe]);
 
   const cycleData = useMemo(
     () =>
@@ -175,16 +201,57 @@ export function CyclesTab({
 
       <ChartFrame
         caption={
-          <>
-            Daily Chart · 🟢 Past Buy Zones ·{" "}
-            <span style={{ color: C.green }}>━</span> Projected Buy Window
-          </>
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="flex items-center gap-1">
+              {TIMEFRAMES.map((tf) => {
+                const active = tf === timeframe;
+                return (
+                  <button
+                    key={tf}
+                    type="button"
+                    onClick={() => setTimeframe(tf)}
+                    className="rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-[1px] transition-colors"
+                    style={{
+                      background: active ? `${C.green}22` : "transparent",
+                      color: active ? C.green : C.muted,
+                      border: `1px solid ${active ? `${C.green}55` : C.border}`,
+                    }}
+                    aria-pressed={active}
+                  >
+                    {tf}
+                  </button>
+                );
+              })}
+            </span>
+            <span>
+              {timeframe === "1d"
+                ? "· 🟢 Past Buy Zones"
+                : timeframe === "4h"
+                  ? "· 30d window"
+                  : timeframe === "1h"
+                    ? "· 7d window"
+                    : "· 24h window"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowBollinger((v) => !v)}
+              className="ml-auto rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-[1px] transition-colors"
+              style={{
+                background: showBollinger ? `${C.purple}22` : "transparent",
+                color: showBollinger ? C.purple : C.muted,
+                border: `1px solid ${showBollinger ? `${C.purple}55` : C.border}`,
+              }}
+              aria-pressed={showBollinger}
+            >
+              BB(20,2)
+            </button>
+          </span>
         }
         height={190}
-        loading={loading}
+        loading={loading || chartLoading}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart
+          <ComposedChart
             data={enriched}
             margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
           >
@@ -204,42 +271,94 @@ export function CyclesTab({
               width={56}
             />
             <Tooltip content={<ChartTooltip />} />
-            {projections.slice(0, 1).map((p, i) => (
-              <ReferenceLine
-                key={`pb${i}`}
-                x={new Date(p.buyDate).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                })}
-                stroke={`${C.green}88`}
-                strokeDasharray="3 3"
-                strokeWidth={2}
-                label={{
-                  value: "BUY?",
-                  position: "top",
-                  fill: C.green,
-                  fontSize: 8,
-                }}
+            {showBollinger && (
+              <Area
+                type="monotone"
+                dataKey="bbRange"
+                stroke="none"
+                fill={C.purple}
+                fillOpacity={0.08}
+                isAnimationActive={false}
+                connectNulls={false}
+                activeDot={false}
               />
-            ))}
-            {projections.slice(0, 1).map((p, i) => (
-              <ReferenceLine
-                key={`ps${i}`}
-                x={new Date(p.sellDate).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                })}
-                stroke={`${C.red}88`}
+            )}
+            {showBollinger && (
+              <Line
+                type="monotone"
+                dataKey="bbUpper"
+                stroke={`${C.purple}77`}
+                strokeWidth={1}
                 strokeDasharray="3 3"
-                strokeWidth={2}
-                label={{
-                  value: "SELL?",
-                  position: "top",
-                  fill: C.red,
-                  fontSize: 8,
-                }}
+                dot={false}
+                activeDot={false}
+                connectNulls={false}
+                isAnimationActive={false}
               />
-            ))}
+            )}
+            {showBollinger && (
+              <Line
+                type="monotone"
+                dataKey="bbLower"
+                stroke={`${C.purple}77`}
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                dot={false}
+                activeDot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            )}
+            {showBollinger && (
+              <Line
+                type="monotone"
+                dataKey="bbMiddle"
+                stroke={`${C.purple}99`}
+                strokeWidth={1}
+                dot={false}
+                activeDot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            )}
+            {timeframe === "1d" &&
+              projections.slice(0, 1).map((p, i) => (
+                <ReferenceLine
+                  key={`pb${i}`}
+                  x={new Date(p.buyDate).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                  stroke={`${C.green}88`}
+                  strokeDasharray="3 3"
+                  strokeWidth={2}
+                  label={{
+                    value: "BUY?",
+                    position: "top",
+                    fill: C.green,
+                    fontSize: 8,
+                  }}
+                />
+              ))}
+            {timeframe === "1d" &&
+              projections.slice(0, 1).map((p, i) => (
+                <ReferenceLine
+                  key={`ps${i}`}
+                  x={new Date(p.sellDate).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                  stroke={`${C.red}88`}
+                  strokeDasharray="3 3"
+                  strokeWidth={2}
+                  label={{
+                    value: "SELL?",
+                    position: "top",
+                    fill: C.red,
+                    fontSize: 8,
+                  }}
+                />
+              ))}
             <Line
               type="monotone"
               dataKey="price"
@@ -267,45 +386,7 @@ export function CyclesTab({
               }}
               activeDot={{ r: 4, fill: C.blue }}
             />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartFrame>
-
-      <ChartFrame
-        caption="4H Chart (last 16 days) · Intraday cycle view"
-        height={140}
-        loading={loading}
-      >
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={data4h.slice(-96)}
-            margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-            <XAxis
-              dataKey="displayDate"
-              tick={{ fill: C.muted, fontSize: 9 }}
-              interval={15}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fill: C.muted, fontSize: 9 }}
-              tickFormatter={(v: number) => `$${v.toFixed(4)}`}
-              axisLine={false}
-              tickLine={false}
-              width={62}
-            />
-            <Tooltip content={<ChartTooltip />} />
-            <Line
-              type="monotone"
-              dataKey="price"
-              stroke={C.purple}
-              strokeWidth={1.5}
-              dot={false}
-              activeDot={{ r: 3, fill: C.purple }}
-            />
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </ChartFrame>
 
@@ -319,115 +400,203 @@ export function CyclesTab({
         >
           <div className="mb-3 flex items-center justify-between">
             <p
-              className="m-0 text-[10px] uppercase tracking-[1px]"
+              className="m-0 text-[11px] uppercase tracking-[1px]"
               style={{ color: C.green }}
             >
               📅 Upcoming 30-Day Cycles
             </p>
-            <span className="text-[10px]" style={{ color: C.muted }}>
+            <span className="text-[11px]" style={{ color: C.muted }}>
               {avgGap}d avg gap · -{avgDropStr}% avg dip
             </span>
           </div>
-          {projections.map((p) => (
-            <article
-              key={p.cycle}
-              className="mb-2.5 overflow-hidden rounded-[10px]"
-              style={{
-                border: `1px solid ${p.confidenceColor}44`,
-                background: "rgba(255,255,255,0.015)",
-              }}
-            >
-              <header
-                className="flex items-center justify-between px-3 py-1.5"
-                style={{ background: `${p.confidenceColor}15` }}
+          {projections.map((p) => {
+            const buyStop = p.estBuyPrice * 1.02;
+            const sellStop = p.estSellPrice * 0.98;
+            const denom = avgGap > 0 ? avgGap : 30;
+            const progress = p.isActive
+              ? 100
+              : Math.min(
+                  100,
+                  Math.max(0, ((denom - p.daysAway) / denom) * 100),
+                );
+            return (
+              <article
+                key={p.cycle}
+                className="mb-3 overflow-hidden rounded-[10px]"
+                style={{
+                  border: `1px solid ${p.confidenceColor}55`,
+                  background: "rgba(255,255,255,0.015)",
+                }}
               >
-                <span
-                  className="text-[11px] font-bold"
-                  style={{ color: p.confidenceColor }}
+                <header
+                  className="flex items-center justify-between px-4 py-2"
+                  style={{ background: `${p.confidenceColor}15` }}
                 >
-                  Cycle {p.cycle} · {p.confidence}
-                </span>
-                <span className="text-[10px]" style={{ color: C.muted }}>
-                  {p.isActive
-                    ? "In progress"
-                    : p.daysAway > 0
-                      ? `Buy in ${p.daysAway}d`
-                      : "Starting soon"}
-                </span>
-              </header>
-              <div className="px-3 py-2.5">
-                <div className="flex items-stretch">
-                  <div
-                    className="flex-1 rounded-l-lg px-2.5 py-2"
-                    style={{
-                      background: `${C.green}12`,
-                      border: `1px solid ${C.green}30`,
-                    }}
+                  <span
+                    className="text-xs font-bold tracking-[1px]"
+                    style={{ color: p.confidenceColor }}
                   >
-                    <p
-                      className="m-0 text-[9px] uppercase tracking-[1px]"
-                      style={{ color: C.green }}
-                    >
-                      🟢 BUY
-                    </p>
-                    <p className="m-0 mt-1 text-xs font-bold text-white tabular-nums">
-                      {p.buyDate}
-                    </p>
-                    <p
-                      className="m-0 text-[10px] tabular-nums"
-                      style={{ color: C.green }}
-                    >
-                      ~${p.estBuyPrice.toFixed(5)}
-                    </p>
-                  </div>
+                    ▶ Cycle {String(p.cycle).padStart(2, "0")} · {p.confidence}
+                  </span>
+                  <span className="text-[11px]" style={{ color: C.muted }}>
+                    {p.isActive
+                      ? "In progress"
+                      : p.daysAway > 0
+                        ? `buy in ${p.daysAway}d`
+                        : "starting soon"}
+                  </span>
+                </header>
+                <div className="h-[3px] w-full" style={{ background: C.border }}>
                   <div
-                    className="flex flex-col items-center justify-center px-2"
+                    className="h-full transition-all"
                     style={{
-                      background: "rgba(255,255,255,0.02)",
-                      borderTop: "1px solid rgba(255,255,255,0.06)",
-                      borderBottom: "1px solid rgba(255,255,255,0.06)",
+                      width: `${progress}%`,
+                      background: p.confidenceColor,
                     }}
-                  >
-                    <span className="text-sm" style={{ color: C.muted }}>
-                      →
-                    </span>
+                  />
+                </div>
+
+                {/* BUY TICKET */}
+                <div
+                  className="px-5 py-4"
+                  style={{
+                    background: `linear-gradient(180deg, ${C.green}14, ${C.green}04)`,
+                  }}
+                >
+                  <div className="mb-3 flex items-center justify-between">
                     <span
-                      className="whitespace-nowrap text-[9px]"
+                      className="rounded-sm px-2 py-1 text-[11px] font-bold uppercase tracking-[1.5px]"
+                      style={{ background: `${C.green}22`, color: C.green }}
+                    >
+                      ▶ BUY · LIMIT
+                    </span>
+                    <span className="text-sm font-bold text-white tabular-nums">
+                      {p.buyDate}
+                    </span>
+                  </div>
+                  <p
+                    className="m-0 mb-1 text-[10px] uppercase tracking-[1.5px]"
+                    style={{ color: C.muted }}
+                  >
+                    Entry
+                  </p>
+                  <p
+                    className="m-0 text-[24px] font-extrabold leading-none tabular-nums"
+                    style={{ color: C.green }}
+                  >
+                    ${p.estBuyPrice.toFixed(5)}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span
+                      className="text-[11px] uppercase tracking-[1px]"
                       style={{ color: C.muted }}
                     >
-                      hold {p.holdDays}d
+                      ▸ Stop-limit
+                    </span>
+                    <span
+                      className="text-base font-semibold tabular-nums"
+                      style={{ color: C.green }}
+                    >
+                      ${buyStop.toFixed(5)}
+                    </span>
+                    <span
+                      className="ml-auto text-[10px] tracking-[0.5px]"
+                      style={{ color: C.muted }}
+                    >
+                      +2% buffer ensures fill
                     </span>
                   </div>
-                  <div
-                    className="flex-1 rounded-r-lg px-2.5 py-2"
-                    style={{
-                      background: `${C.red}12`,
-                      border: `1px solid ${C.red}30`,
-                    }}
-                  >
-                    <p
-                      className="m-0 text-[9px] uppercase tracking-[1px]"
-                      style={{ color: C.red }}
-                    >
-                      🔴 SELL
-                    </p>
-                    <p className="m-0 mt-1 text-xs font-bold text-white tabular-nums">
-                      {p.sellDate}
-                    </p>
-                    <p
-                      className="m-0 text-[10px] tabular-nums"
-                      style={{ color: C.red }}
-                    >
-                      ~${p.estSellPrice.toFixed(5)}{" "}
-                      <span style={{ color: C.yellow }}>+{p.estReturn}%</span>
-                    </p>
-                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+
+                {/* perforation */}
+                <div className="relative">
+                  <div
+                    className="border-t border-dashed"
+                    style={{ borderColor: C.border }}
+                  />
+                  <span
+                    className="absolute -left-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full"
+                    style={{ background: C.bg }}
+                  />
+                  <span
+                    className="absolute -right-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full"
+                    style={{ background: C.bg }}
+                  />
+                </div>
+
+                {/* SELL TICKET */}
+                <div
+                  className="px-5 py-4"
+                  style={{
+                    background: `linear-gradient(180deg, ${C.red}14, ${C.red}04)`,
+                  }}
+                >
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="rounded-sm px-2 py-1 text-[11px] font-bold uppercase tracking-[1.5px]"
+                        style={{ background: `${C.red}22`, color: C.red }}
+                      >
+                        ◀ SELL · LIMIT
+                      </span>
+                      <span
+                        className="rounded-sm px-1.5 py-0.5 text-[11px] font-bold tabular-nums"
+                        style={{
+                          background: `${C.yellow}22`,
+                          color: C.yellow,
+                        }}
+                      >
+                        +{p.estReturn}%
+                      </span>
+                    </div>
+                    <span className="text-sm font-bold text-white tabular-nums">
+                      {p.sellDate}
+                    </span>
+                  </div>
+                  <p
+                    className="m-0 mb-1 text-[10px] uppercase tracking-[1.5px]"
+                    style={{ color: C.muted }}
+                  >
+                    Exit
+                  </p>
+                  <p
+                    className="m-0 text-[24px] font-extrabold leading-none tabular-nums"
+                    style={{ color: C.red }}
+                  >
+                    ${p.estSellPrice.toFixed(5)}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span
+                      className="text-[11px] uppercase tracking-[1px]"
+                      style={{ color: C.muted }}
+                    >
+                      ▸ Stop-limit
+                    </span>
+                    <span
+                      className="text-base font-semibold tabular-nums"
+                      style={{ color: C.red }}
+                    >
+                      ${sellStop.toFixed(5)}
+                    </span>
+                    <span
+                      className="ml-auto text-[10px] tracking-[0.5px]"
+                      style={{ color: C.muted }}
+                    >
+                      -2% buffer ensures fill
+                    </span>
+                  </div>
+                  <p
+                    className="m-0 mt-2 text-right text-[11px]"
+                    style={{ color: C.muted }}
+                  >
+                    hold {p.holdDays}d
+                  </p>
+                </div>
+              </article>
+            );
+          })}
           <p
-            className="m-0 mt-1 text-[9px] italic"
+            className="m-0 mt-1 text-[11px]"
             style={{ color: C.muted }}
           >
             ⚠ Each cycle = one complete arc: buy the dip → hold → sell the

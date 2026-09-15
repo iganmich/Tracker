@@ -39,6 +39,10 @@ export interface EnrichedPricePoint extends PricePoint {
   actualReturn?: string;
   label?: string;
   isBuyZone: boolean;
+  bbMiddle?: number | null;
+  bbUpper?: number | null;
+  bbLower?: number | null;
+  bbRange?: [number, number] | null;
 }
 
 export interface SRLevel {

@@ -491,3 +491,29 @@ export function computeBuySignal(
     proximityPct,
   };
 }
+
+export interface BollingerPoint {
+  middle: number | null;
+  upper: number | null;
+  lower: number | null;
+}
+
+export function computeBollingerBands(
+  data: PricePoint[],
+  period = 20,
+  k = 2,
+): BollingerPoint[] {
+  return data.map((_, i) => {
+    if (i < period - 1) return { middle: null, upper: null, lower: null };
+    const slice = data.slice(i - period + 1, i + 1);
+    const mean = slice.reduce((a, p) => a + p.price, 0) / period;
+    const variance =
+      slice.reduce((a, p) => a + (p.price - mean) ** 2, 0) / period;
+    const stdev = Math.sqrt(variance);
+    return {
+      middle: mean,
+      upper: mean + k * stdev,
+      lower: mean - k * stdev,
+    };
+  });
+}

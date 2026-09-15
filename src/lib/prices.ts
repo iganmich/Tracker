@@ -1,8 +1,20 @@
 import type { PricePoint } from "./types";
 import { UNLOCK_EVENTS } from "./constants";
 
-const COINGECKO_URL =
-  "https://api.coingecko.com/api/v3/coins/monad/market_chart?vs_currency=usd&days=90&interval=daily";
+const COINGECKO_BASE =
+  "https://api.coingecko.com/api/v3/coins/monad/market_chart?vs_currency=usd";
+
+export type Timeframe = "5m" | "1h" | "4h" | "1d";
+
+const TIMEFRAME_CONFIG: Record<
+  Timeframe,
+  { days: number; aggregateHours?: number; intraday: boolean }
+> = {
+  "5m": { days: 1, intraday: true },
+  "1h": { days: 7, intraday: true },
+  "4h": { days: 30, aggregateHours: 4, intraday: true },
+  "1d": { days: 90, intraday: false },
+};
 
 function findUnlockNear(dt: Date) {
   return (
@@ -12,21 +24,55 @@ function findUnlockNear(dt: Date) {
   );
 }
 
-function toPricePoint(ts: number, price: number): PricePoint {
+function toPricePoint(ts: number, price: number, intraday = false): PricePoint {
   const dt = new Date(ts);
   return {
-    date: dt.toISOString().split("T")[0],
-    displayDate: dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    date: intraday ? dt.toISOString() : dt.toISOString().split("T")[0],
+    displayDate: intraday
+      ? dt.toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+        })
+      : dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     price: parseFloat(price.toFixed(6)),
-    unlock: findUnlockNear(dt),
+    unlock: intraday ? null : findUnlockNear(dt),
   };
 }
 
-export async function fetchPriceData(): Promise<PricePoint[]> {
-  const res = await fetch(COINGECKO_URL);
+function aggregateToHours(
+  points: [number, number][],
+  hours: number,
+): [number, number][] {
+  if (points.length === 0) return [];
+  const ms = hours * 60 * 60 * 1000;
+  const buckets = new Map<number, number>();
+  for (const [ts, price] of points) {
+    const bucket = Math.floor(ts / ms) * ms;
+    buckets.set(bucket, price);
+  }
+  return [...buckets.entries()].sort((a, b) => a[0] - b[0]);
+}
+
+export async function fetchPriceDataForTimeframe(
+  tf: Timeframe,
+): Promise<PricePoint[]> {
+  const cfg = TIMEFRAME_CONFIG[tf];
+  const url =
+    tf === "1d"
+      ? `${COINGECKO_BASE}&days=${cfg.days}&interval=daily`
+      : `${COINGECKO_BASE}&days=${cfg.days}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
   const json = (await res.json()) as { prices: [number, number][] };
-  return json.prices.map(([ts, price]) => toPricePoint(ts, price));
+  const raw = cfg.aggregateHours
+    ? aggregateToHours(json.prices, cfg.aggregateHours)
+    : json.prices;
+  return raw.map(([ts, price]) => toPricePoint(ts, price, cfg.intraday));
+}
+
+export async function fetchPriceData(): Promise<PricePoint[]> {
+  return fetchPriceDataForTimeframe("1d");
 }
 
 export function generateMockData(): PricePoint[] {

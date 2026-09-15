@@ -17,6 +17,7 @@ interface ChartTooltipProps {
 export function ChartTooltip({ active, payload, label }: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
+  const price = d?.price;
   return (
     <div
       role="tooltip"
@@ -30,9 +31,16 @@ export function ChartTooltip({ active, payload, label }: ChartTooltipProps) {
       <p className="mb-1 font-bold" style={{ color: C.green }}>
         {label}
       </p>
-      <p className="m-0">
-        Price: <b className="text-white">${payload[0]?.value?.toFixed(5)}</b>
-      </p>
+      {typeof price === "number" && (
+        <p className="m-0">
+          Price: <b className="text-white">${price.toFixed(5)}</b>
+        </p>
+      )}
+      {typeof d?.bbUpper === "number" && typeof d?.bbLower === "number" && (
+        <p className="m-0 mt-0.5" style={{ color: C.purple }}>
+          BB: ${d.bbLower.toFixed(5)} – ${d.bbUpper.toFixed(5)}
+        </p>
+      )}
       {d?.unlock && (
         <p className="mt-1 m-0" style={{ color: C.yellow }}>
           🔓 {d.unlock.label} · {d.unlock.amount}
