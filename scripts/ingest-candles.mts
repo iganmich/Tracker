@@ -1,25 +1,27 @@
 /**
- * Pull MON/USDT OHLCV candles from an exchange and store them in the local Postgres (`mon` database).
+ * Pull OHLCV candles for one coin from an exchange and store them in the local Postgres (`mon` database).
  *
- *   npm run candles:ingest                       # incremental, all sources, all resolutions
+ *   npm run candles:ingest                       # MON, incremental, all sources, all resolutions
+ *   npm run candles:ingest -- --coin SOL         # one coin (MON | XRP | SOL | BTC, see src/lib/coins.ts)
  *   npm run candles:ingest -- --source pionex    # one source (pionex | kucoin)
  *   npm run candles:ingest -- --res 5min         # one resolution (names below)
  *   npm run candles:ingest -- --full             # ignore what is stored, re-pull from launch (upserts)
  *
  * Sources
- *   pionex  MON_USDT_PERP  — liquid; reproduces the user's live Pionex spot grid bot within ±3 % rounds
- *                            on 5-minute candles. Hard cap of 10,000 candles per interval
+ *   pionex  <coin.pionexSymbol> — spot where it exists; MON has no public spot pair, so its perp, which
+ *                            reproduces the user's live Pionex spot grid bot within ±3 % rounds on
+ *                            5-minute candles. Hard cap of 10,000 candles per interval
  *                            (1min ≈ 7 d, 5min ≈ 35 d, 15min ≈ 104 d, 30min ≈ 208 d, 1hour/4hour/1day full).
  *                            Public, paginates backwards with endTime, newest first.
- *   kucoin  MON-USDT       — real spot, full history at every resolution, but very thin: most 1-minute
- *                            candles are flat, so it under-counts grid fills ~2×. Kept for deep history.
+ *   kucoin  MON-USDT       — MON only. Real spot, full history at every resolution, but very thin: most
+ *                            1-minute candles are flat, so it under-counts grid fills ~2×. Deep history.
  *
  * Target is MON_DATABASE_URL (default: this repo's own local Docker Postgres, infra/local-db, port 5460).
  * Refuses any host that is not localhost — this script never touches Neon or a deployed database.
  */
 import pg from "pg";
+import { COINS, DEFAULT_COIN, isCoinId, type Coin } from "../src/lib/coins";
 
-const LAUNCH_S = Date.UTC(2025, 10, 24) / 1000; // 2025-11-24 00:00 UTC (first trade 15:00)
 const PAUSE_MS = 150;
 const DEFAULT_URL = "postgresql://mon:localdev@localhost:5460/mon";
 
@@ -28,6 +30,8 @@ type Candle = { t: number; o: string; h: string; l: string; c: string; v: string
 interface Source {
   exchange: string;
   symbol: string;
+  /** First tradeable second (epoch s); a full re-pull starts here. */
+  launchS: number;
   resolutions: Record<string, number>; // our resolution name → seconds
   /** Fetch candles covering [startS, endS]; return newest-or-oldest order, any length. Empty = nothing more. */
   fetchRange(resName: string, sec: number, startS: number, endS: number | null): Promise<Candle[]>;
@@ -51,9 +55,11 @@ async function getJson<T>(url: string): Promise<T> {
   throw new Error(`rate-limited 5 times: ${url}`);
 }
 
+/** KuCoin is MON-only: no other coin in the registry is tracked there. */
 const kucoin: Source = {
   exchange: "kucoin",
   symbol: "MON-USDT",
+  launchS: COINS.MON.launchMs / 1000,
   resolutions: { "1min": 60, "5min": 300, "15min": 900, "1hour": 3600, "1day": 86400 },
   pageCandles: 1500,
   forward: true,
@@ -67,37 +73,54 @@ const kucoin: Source = {
   },
 };
 
-const pionex: Source = {
-  exchange: "pionex",
-  symbol: "MON_USDT_PERP",
-  resolutions: { "1min": 60, "5min": 300, "15min": 900, "30min": 1800, "1hour": 3600, "4hour": 14400, "1day": 86400 },
-  pageCandles: 500,
-  forward: false,
-  async fetchRange(resName, _sec, _startS, endS) {
-    const interval = { "1min": "1M", "5min": "5M", "15min": "15M", "30min": "30M", "1hour": "60M", "4hour": "4H", "1day": "1D" }[resName];
-    type K = { time: number; open: string; high: string; low: string; close: string; volume: string };
-    const json = await getJson<{ result: boolean; code?: string; message?: string; data?: { klines: K[] } }>(
-      // Pionex rejects an endTime at or after "now"; omit it for the newest page.
-      `https://api.pionex.com/api/v1/market/klines?symbol=MON_USDT_PERP&interval=${interval}&limit=500${endS === null ? "" : `&endTime=${endS * 1000}`}`,
-    );
-    if (!json.result) throw new Error(`Pionex ${json.code}: ${json.message ?? ""}`);
-    return (json.data?.klines ?? []).map((k) => ({ t: Math.floor(k.time / 1000), o: k.open, h: k.high, l: k.low, c: k.close, v: k.volume, q: null }));
-  },
-};
+function pionexFor(coin: Coin): Source {
+  return {
+    exchange: coin.exchange,
+    symbol: coin.pionexSymbol,
+    launchS: coin.launchMs / 1000,
+    resolutions: { "1min": 60, "5min": 300, "15min": 900, "30min": 1800, "1hour": 3600, "4hour": 14400, "1day": 86400 },
+    pageCandles: 500,
+    forward: false,
+    async fetchRange(resName, _sec, _startS, endS) {
+      const interval = { "1min": "1M", "5min": "5M", "15min": "15M", "30min": "30M", "1hour": "60M", "4hour": "4H", "1day": "1D" }[resName];
+      type K = { time: number; open: string; high: string; low: string; close: string; volume: string };
+      const json = await getJson<{ result: boolean; code?: string; message?: string; data?: { klines: K[] } }>(
+        // Pionex rejects an endTime at or after "now"; omit it for the newest page.
+        `https://api.pionex.com/api/v1/market/klines?symbol=${coin.pionexSymbol}&interval=${interval}&limit=500${endS === null ? "" : `&endTime=${endS * 1000}`}`,
+      );
+      if (!json.result) throw new Error(`Pionex ${json.code}: ${json.message ?? ""}`);
+      return (json.data?.klines ?? []).map((k) => ({ t: Math.floor(k.time / 1000), o: k.open, h: k.high, l: k.low, c: k.close, v: k.volume, q: null }));
+    },
+  };
+}
 
-const SOURCES: Record<string, Source> = { pionex, kucoin };
+const SOURCE_NAMES = ["pionex", "kucoin"] as const;
 
 function parseArgs() {
   const args = process.argv.slice(2);
   const pick = (flag: string) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : null);
   const source = pick("--source");
   const res = pick("--res");
+  const coinArg = pick("--coin") ?? DEFAULT_COIN;
   const full = args.includes("--full");
-  if (source && !(source in SOURCES)) {
-    console.error(`Unknown --source ${source}. Use: ${Object.keys(SOURCES).join(", ")}`);
+  if (source && !SOURCE_NAMES.includes(source as (typeof SOURCE_NAMES)[number])) {
+    console.error(`Unknown --source ${source}. Use: ${SOURCE_NAMES.join(", ")}`);
     process.exit(1);
   }
-  return { source, res, full };
+  if (!isCoinId(coinArg)) {
+    console.error(`Unknown --coin ${coinArg}. Use: ${Object.keys(COINS).join(", ")}`);
+    process.exit(1);
+  }
+  if (source === "kucoin" && coinArg !== "MON") {
+    console.error(`--source kucoin is MON-only (no ${coinArg} pair is tracked there).`);
+    process.exit(1);
+  }
+  return { source, res, full, coin: COINS[coinArg] };
+}
+
+function sourcesFor(coin: Coin, source: string | null): Source[] {
+  const all: Source[] = coin.id === "MON" ? [pionexFor(coin), kucoin] : [pionexFor(coin)];
+  return source ? all.filter((s) => s.exchange === source) : all;
 }
 
 function assertLocal(url: string) {
@@ -134,11 +157,11 @@ async function ingest(client: pg.Client, src: Source, resName: string, sec: numb
   );
   const stored = rows[0]?.max ? Number(rows[0].max) : null;
   // Re-pull the last stored candle too: it may have been partial when ingested.
-  const floor = full || stored === null ? LAUNCH_S : stored;
+  const floor = full || stored === null ? src.launchS : stored;
   const now = Math.floor(Date.now() / 1000);
   let inserted = 0;
   let requests = 0;
-  process.stdout.write(`${src.exchange.padEnd(7)}${resName.padEnd(6)} from ${new Date(floor * 1000).toISOString()} `);
+  process.stdout.write(`${src.exchange.padEnd(7)}${src.symbol.padEnd(15)}${resName.padEnd(6)} from ${new Date(floor * 1000).toISOString()} `);
 
   if (src.forward) {
     let cursor = floor;
@@ -173,14 +196,14 @@ async function ingest(client: pg.Client, src: Source, resName: string, sec: numb
 }
 
 async function main() {
-  const { source, res, full } = parseArgs();
+  const { source, res, full, coin } = parseArgs();
   const url = process.env.MON_DATABASE_URL ?? DEFAULT_URL;
   assertLocal(url);
   const client = new pg.Client({ connectionString: url });
   await client.connect();
-  console.log(`→ ${new URL(url).host}${new URL(url).pathname} (${full ? "full" : "incremental"})`);
+  console.log(`→ ${new URL(url).host}${new URL(url).pathname} — ${coin.id} (${full ? "full" : "incremental"})`);
   try {
-    for (const src of source ? [SOURCES[source]] : Object.values(SOURCES)) {
+    for (const src of sourcesFor(coin, source)) {
       for (const [resName, sec] of Object.entries(src.resolutions)) {
         if (res && res !== resName) continue;
         await ingest(client, src, resName, sec, full);

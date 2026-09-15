@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
-import { queryCandlesFromDb } from "@/lib/server/candles-db";
-import { fetchCandlesLive } from "@/lib/server/candles-pionex";
+import { COINS, DEFAULT_COIN, isCoinId } from "@/lib/coins";
+import { ensureCandles } from "@/lib/server/candle-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TTL_MS = 5 * 60 * 1000;
 const CACHEABLE = new Set([30, 90, 180, 400]);
-const cache = new Map<number, { at: number; body: string }>();
+const cache = new Map<string, { at: number; body: string }>();
 
 const OK_HEADERS = { "Content-Type": "application/json", "Cache-Control": "public, max-age=300" };
 
@@ -26,40 +26,43 @@ const json = (body: unknown, status = 200) =>
   });
 
 export async function GET(req: NextRequest) {
+  const rawCoin = req.nextUrl.searchParams.get("coin") ?? DEFAULT_COIN;
+  if (!isCoinId(rawCoin)) {
+    return json({ error: `unknown coin ${rawCoin}` }, 400);
+  }
+  const coin = COINS[rawCoin];
+
   const raw = req.nextUrl.searchParams.get("days");
   const days = Number(raw);
   if (!raw || !Number.isInteger(days) || days < 1 || days > 400) {
     return json({ error: "days must be an integer 1..400" }, 400);
   }
 
+  const cacheKey = `${coin.id}:${days}`;
   const cacheable = CACHEABLE.has(days);
-  const hit = cacheable ? cache.get(days) : undefined;
+  const hit = cacheable ? cache.get(cacheKey) : undefined;
   if (hit && Date.now() - hit.at < TTL_MS) {
     return new Response(hit.body, { headers: OK_HEADERS });
   }
 
   const resolutionSec = resolutionForDays(days);
-  let candles: number[][] | null = null;
-  let source: "db" | "live" = "db";
+  let result;
   try {
-    candles = await queryCandlesFromDb(resolutionSec, days);
+    result = await ensureCandles(coin, resolutionSec, days);
   } catch (err) {
-    console.error("[candles] db query failed, falling back to live:", err instanceof Error ? err.message : err);
-    candles = null;
+    return json({ error: `candles unavailable: ${err instanceof Error ? err.message : String(err)}` }, 502);
   }
-  if (!candles || candles.length === 0) {
-    source = "live";
-    try {
-      candles = await fetchCandlesLive(resolutionSec, days);
-    } catch (err) {
-      return json({ error: `candles unavailable: ${err instanceof Error ? err.message : String(err)}` }, 502);
-    }
-    if (candles.length === 0) {
-      return json({ error: "candles unavailable: empty" }, 502);
-    }
+  if (result.candles.length === 0) {
+    return json({ error: "candles unavailable: empty" }, 502);
   }
 
-  const body = JSON.stringify({ resolutionSec, source, candles });
-  if (cacheable) cache.set(days, { at: Date.now(), body });
+  const body = JSON.stringify({
+    coin: coin.id,
+    symbol: coin.pionexSymbol,
+    resolutionSec: result.resolutionSec,
+    source: result.source,
+    candles: result.candles,
+  });
+  if (cacheable) cache.set(cacheKey, { at: Date.now(), body });
   return new Response(body, { headers: OK_HEADERS });
 }
