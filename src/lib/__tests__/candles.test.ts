@@ -11,10 +11,12 @@ import {
 
 describe("candles helpers", () => {
   it("maps windows to days", () => {
-    expect(GRID_WINDOW_DAYS).toEqual({ "1m": 30, "3m": 90, "6m": 180, max: 400 });
+    expect(GRID_WINDOW_DAYS).toEqual({ "1d": 1, "1w": 7, "1m": 30, "3m": 90, "6m": 180, max: 400 });
   });
 
   it("picks the finest resolution Pionex history covers", () => {
+    expect(resolutionForDays(1)).toBe(60);
+    expect(resolutionForDays(7)).toBe(300);
     expect(resolutionForDays(30)).toBe(300);
     expect(resolutionForDays(90)).toBe(900);
     expect(resolutionForDays(180)).toBe(1800);
@@ -22,7 +24,7 @@ describe("candles helpers", () => {
   });
 
   it("has a factor for every resolution the route can return", () => {
-    for (const days of [30, 90, 180, 400]) {
+    for (const days of [1, 7, 30, 90, 180, 400]) {
       expect(RESOLUTION_FACTOR[resolutionForDays(days)]).toBeGreaterThanOrEqual(1);
     }
   });

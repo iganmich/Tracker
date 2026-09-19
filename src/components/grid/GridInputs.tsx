@@ -10,7 +10,7 @@ interface GridInputsProps {
   onChange: (next: GridSettings) => void;
 }
 
-const WINDOWS: GridWindow[] = ["1m", "3m", "6m", "max"];
+const WINDOWS: GridWindow[] = ["1d", "1w", "1m", "3m", "6m", "max"];
 const RANKS: { id: RankBy; label: string; title: string }[] = [
   { id: "worst", label: "WORST MONTH", title: "Rank and size on the worst 30-day slice — steady income" },
   { id: "average", label: "AVERAGE", title: "Rank and size on the average monthly yield" },

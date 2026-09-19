@@ -284,7 +284,7 @@ export const isGridSettings = (v: unknown): v is GridSettings => {
   return (
     (o.goalUsd === null || typeof o.goalUsd === "number") &&
     (o.maxInvestment === null || typeof o.maxInvestment === "number") &&
-    ["1m", "3m", "6m", "max"].includes(o.window as string) &&
+    ["1d", "1w", "1m", "3m", "6m", "max"].includes(o.window as string) &&
     (o.mode === "arithmetic" || o.mode === "geometric") &&
     (o.rankBy === "worst" || o.rankBy === "average") &&
     typeof o.minTradesPerDay === "number" &&

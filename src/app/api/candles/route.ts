@@ -6,13 +6,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TTL_MS = 5 * 60 * 1000;
-const CACHEABLE = new Set([30, 90, 180, 400]);
+const CACHEABLE = new Set([1, 7, 30, 90, 180, 400]);
 const cache = new Map<string, { at: number; body: string }>();
 
 const OK_HEADERS = { "Content-Type": "application/json", "Cache-Control": "public, max-age=300" };
 
 /** Mirrors resolutionForDays() in src/lib/candles.ts — keep in sync. */
 function resolutionForDays(days: number): number {
+  if (days <= 1) return 60;
   if (days <= 30) return 300;
   if (days <= 90) return 900;
   if (days <= 180) return 1800;

@@ -9,9 +9,11 @@ export interface Candle {
   close: number;
 }
 
-export type GridWindow = "1m" | "3m" | "6m" | "max";
+export type GridWindow = "1d" | "1w" | "1m" | "3m" | "6m" | "max";
 
 export const GRID_WINDOW_DAYS: Record<GridWindow, number> = {
+  "1d": 1,
+  "1w": 7,
   "1m": 30,
   "3m": 90,
   "6m": 180,
@@ -19,6 +21,8 @@ export const GRID_WINDOW_DAYS: Record<GridWindow, number> = {
 };
 
 export const GRID_WINDOW_LABEL: Record<GridWindow, string> = {
+  "1d": "1D",
+  "1w": "1W",
   "1m": "1M",
   "3m": "3M",
   "6m": "6M",
@@ -31,6 +35,7 @@ export const GRID_WINDOW_LABEL: Record<GridWindow, string> = {
  * src/app/api/candles/route.ts — keep both in sync.
  */
 export function resolutionForDays(days: number): number {
+  if (days <= 1) return 60; // one day: 1-minute candles (1,440), Pionex keeps ≈ 7 days of them
   if (days <= 30) return 300;
   if (days <= 90) return 900;
   if (days <= 180) return 1800;
@@ -44,6 +49,7 @@ export function resolutionForDays(days: number): number {
  * yields for sizing; see spec "Data facts".
  */
 export const RESOLUTION_FACTOR: Record<number, number> = {
+  60: 1.0, // 1-min simulated 90 of 83 live rounds; not corrected downwards
   300: 1.0,
   900: 1.17,
   1800: 1.3,

@@ -38,6 +38,8 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
   const topYield = candidates[0]?.rankYield ?? 1;
   const best = candidates[0];
   const investMode = goalUsd === null;
+  // Under 20 days there is no full 30-day slice, so worst and average are the same extrapolated figure.
+  const shortWindow = (best?.result.days ?? 30) < 20;
   const budgetLine =
     best && goalUsd !== null && maxInvestment != null && best.requiredInvestment > maxInvestment
       ? `Your ${fmtUsd(maxInvestment)} max reaches about ${fmtUsd(maxInvestment * best.liveMonthlyYield)} / month with candidate 1 — ${fmtUsd(goalUsd)} needs ${fmtUsd(best.requiredInvestment)}.`
@@ -57,7 +59,9 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
           <p className="m-0 text-[11px]" style={{ color: C.dim }}>
             {loading
               ? "Backtesting…"
-              : `${tested.toLocaleString()} configurations tested, ${kept.toLocaleString()} passed the filters · ranked by ${rankBy === "worst" ? "worst 30-day slice" : "average month"}.`}
+              : `${tested.toLocaleString()} configurations tested, ${kept.toLocaleString()} passed the filters · ranked by ${
+                  shortWindow ? "monthly yield extrapolated from this short window" : rankBy === "worst" ? "worst 30-day slice" : "average month"
+                }.`}
           </p>
           {!loading && budgetLine && (
             <p className="m-0 mt-1 text-[11px]" style={{ color: C.yellow }}>
@@ -110,12 +114,14 @@ export function CandidateBoard({ candidates, selected, onSelect, goalUsd, maxInv
                 <Bar fraction={1} color={`${C.blue}59`} marker={pos} />
               </span>
               <span className="whitespace-nowrap text-[11px]" style={{ color: C.dim }}>
-                {rankBy === "worst" ? "Worst month" : "Avg / mo"}
+                {shortWindow ? "Extrapolated / mo" : rankBy === "worst" ? "Worst month" : "Avg / mo"}
                 <b className="block text-[13px] text-white">
                   {fmtPct(c.liveMonthlyYield * 100)}
-                  <span className="ml-1.5 text-[11px] font-normal" style={{ color: C.dim }}>
-                    {rankBy === "worst" ? `avg ${fmtPct(c.result.monthlyYield * 100)}` : `worst ${fmtPct(c.result.worstSliceYield * 100)}`}
-                  </span>
+                  {!shortWindow && (
+                    <span className="ml-1.5 text-[11px] font-normal" style={{ color: C.dim }}>
+                      {rankBy === "worst" ? `avg ${fmtPct(c.result.monthlyYield * 100)}` : `worst ${fmtPct(c.result.worstSliceYield * 100)}`}
+                    </span>
+                  )}
                 </b>
                 <Bar fraction={c.rankYield / topYield} color={C.green} />
               </span>

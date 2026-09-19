@@ -23,7 +23,7 @@ interface GridAnalystTabProps {
   currentPrice: number | null;
 }
 
-const RES_LABEL: Record<number, string> = { 300: "5-minute", 900: "15-minute", 1800: "30-minute", 3600: "1-hour", 86400: "daily" };
+const RES_LABEL: Record<number, string> = { 60: "1-minute", 300: "5-minute", 900: "15-minute", 1800: "30-minute", 3600: "1-hour", 86400: "daily" };
 
 export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps) {
   const coin = useCoin();
