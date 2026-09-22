@@ -9,10 +9,12 @@ import { useCoin, usePriceFormat } from "@/lib/coin-context";
 import { C } from "@/lib/constants";
 import {
   GRID_WINDOW_DAYS,
+  GRID_WINDOW_LABEL,
   RESOLUTION_FACTOR,
   candlesFromPricePoints,
   fetchCandles,
   type CandleSet,
+  type GridWindow,
 } from "@/lib/candles";
 import { DEFAULT_GRID_SETTINGS, isGridSettings, optimizeGrid, simulateGrid, type GridSettings } from "@/lib/grid";
 import { usePersistentState } from "@/lib/storage";
@@ -23,6 +25,9 @@ interface GridAnalystTabProps {
   currentPrice: number | null;
 }
 
+/** Windows too short to fit a range to: they borrow the 3M ranges and only measure performance. */
+const SHORT_WINDOWS = new Set<GridWindow>(["1d", "1w"]);
+
 const RES_LABEL: Record<number, string> = { 60: "1-minute", 300: "5-minute", 900: "15-minute", 1800: "30-minute", 3600: "1-hour", 86400: "daily" };
 
 export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps) {
@@ -30,6 +35,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
   const fmtPrice = usePriceFormat();
   const [settings, setSettings] = usePersistentState<GridSettings>("mon.grid", DEFAULT_GRID_SETTINGS, isGridSettings);
   const [set, setSet] = useState<CandleSet | null>(null);
+  const [rangeSet, setRangeSet] = useState<CandleSet | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(0);
   // One entry per `${coin}:${window}` so switching back and forth is instant.
@@ -47,11 +53,22 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
     }
     let cancelled = false;
     setLoading(true);
-    fetchCandles(coin.id, GRID_WINDOW_DAYS[w])
-      .then((cs) => {
+    // Short windows (1D/1W) also need the 3M series: ranges are fitted to it, only the
+    // performance is measured on the short window — otherwise the "best" range is one
+    // fitted to yesterday's high and low with hindsight.
+    const rangeKey = `${coin.id}:3m`;
+    const rangeCached = cacheRef.current.get(rangeKey);
+    const needRange = SHORT_WINDOWS.has(w) && !rangeCached;
+    Promise.all([
+      fetchCandles(coin.id, GRID_WINDOW_DAYS[w]),
+      needRange ? fetchCandles(coin.id, GRID_WINDOW_DAYS["3m"]) : Promise.resolve(rangeCached ?? null),
+    ])
+      .then(([cs, range]) => {
         if (cancelled) return;
         cacheRef.current.set(key, cs);
+        if (range) cacheRef.current.set(rangeKey, range);
         setSet(cs);
+        setRangeSet(range);
       })
       .catch(() => {
         if (cancelled) return;
@@ -63,6 +80,7 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
           candles: candlesFromPricePoints(priceData).filter((c) => c.time >= cutoff),
         };
         setSet(fb);
+        setRangeSet(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -98,8 +116,9 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
       minTradesPerDay: settings.minTradesPerDay,
       maxLossPct: settings.maxLossPct,
       asset: coin.id,
+      rangeCandles: SHORT_WINDOWS.has(settings.window) ? rangeSet?.candles : undefined,
     });
-  }, [set, candleMs, price, settings.goalUsd, settings.maxInvestment, settings.mode, settings.rankBy, settings.minTradesPerDay, settings.maxLossPct, factor, coin.id]);
+  }, [set, rangeSet, candleMs, price, settings.window, settings.goalUsd, settings.maxInvestment, settings.mode, settings.rankBy, settings.minTradesPerDay, settings.maxLossPct, factor, coin.id]);
 
   const candidates = useMemo(() => (out?.best ? [out.best, ...out.alternatives] : []), [out]);
   const selectedIdx = Math.min(selected, Math.max(0, candidates.length - 1));
@@ -124,10 +143,13 @@ export function GridAnalystTab({ priceData, currentPrice }: GridAnalystTabProps)
   const warnings = useMemo(() => {
     // With no candidate the board already shows the optimizer's explanation; don't repeat it here.
     const w = chosen ? [...(out?.warnings ?? [])] : [];
+    if (SHORT_WINDOWS.has(settings.window) && rangeSet) {
+      w.unshift(`${GRID_WINDOW_LABEL[settings.window]} window: ranges are the 3M ranges, only the yield is measured over the last ${GRID_WINDOW_DAYS[settings.window]} day(s) and scaled to a month. Use it to see how a realistic grid did recently, not to size an investment.`);
+    }
     if (set?.source === "fallback") w.unshift("Approximate: using daily CoinGecko prices without intraday range — the candle service is unavailable. Fills are under-counted heavily.");
     else if (set && factor !== 1) w.unshift(`${RES_LABEL[set.resolutionSec]} candles capture about ${Math.round(100 / factor)}% of live fills — yields, profit and investment are corrected ×${factor.toFixed(2)}. Calibrated on one live-bot day (measured on MON).`);
     return w;
-  }, [out, set, factor, chosen]);
+  }, [out, set, factor, chosen, settings.window, rangeSet]);
 
   const noCandidateReason = out?.warnings.find((w) => w.includes("trending")) ?? out?.warnings[0];
 

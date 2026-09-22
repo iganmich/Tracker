@@ -161,6 +161,19 @@ describe("optimizeGrid", () => {
     expect(out.warnings.some((w) => w.includes("goal"))).toBe(false);
   });
 
+  it("rangeCandles: ranges come from the long series, performance from the short one", () => {
+    const long = ranging();
+    const short = long.slice(-48); // last two days
+    const currentPrice = short[short.length - 1].close;
+    const out = optimizeGrid({ candles: short, rangeCandles: long, candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
+    expect(out.best).not.toBeNull();
+    const shortLow = Math.min(...short.map((c) => c.low));
+    const shortHigh = Math.max(...short.map((c) => c.high));
+    // a range fitted to the short window could not be wider than it; one from the long window is
+    expect(out.best!.upper - out.best!.lower).toBeGreaterThan(shortHigh - shortLow);
+    expect(out.best!.result.days).toBeCloseTo(2, 6);
+  });
+
   it("handles empty candles", () => {
     const out = optimizeGrid({ candles: [], candleMs: H, goalUsd: 300, maxInvestment: null, currentPrice: 0.025, mode: "arithmetic", factor: 1, rankBy: "average", minTradesPerDay: 0, maxLossPct: 1 });
     expect(out.best).toBeNull();

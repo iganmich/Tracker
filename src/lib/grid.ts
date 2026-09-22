@@ -308,6 +308,12 @@ export interface OptimizeInput {
   maxLossPct: number;
   /** Ticker used in warning text (e.g. "MON"). */
   asset?: string;
+  /**
+   * Candles the candidate RANGES are derived from (percentiles of lows/highs). Defaults to `candles`.
+   * Short windows (1D/1W) pass the 3M candles here so the ranges are ones you could have set in advance,
+   * while `candles` only measures how those grids performed over the short window.
+   */
+  rangeCandles?: Candle[];
 }
 
 export interface Candidate {
@@ -492,8 +498,9 @@ export function optimizeGrid(input: OptimizeInput): OptimizeOutput {
     return none;
   }
 
-  const lows = candles.map((c) => c.low).sort((a, b) => a - b);
-  const highs = candles.map((c) => c.high).sort((a, b) => a - b);
+  const rangeSrc = input.rangeCandles && input.rangeCandles.length > 0 ? input.rangeCandles : candles;
+  const lows = rangeSrc.map((c) => c.low).sort((a, b) => a - b);
+  const highs = rangeSrc.map((c) => c.high).sort((a, b) => a - b);
   const lowers = unique(LOWER_PCTS.map((p) => percentile(lows, p)));
   const uppers = unique(UPPER_PCTS.map((p) => percentile(highs, p)));
 
